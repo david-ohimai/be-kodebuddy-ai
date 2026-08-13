@@ -1,5 +1,3 @@
-# app/core/seed.py
-
 import os
 
 from sqlmodel import Session, select
@@ -10,7 +8,7 @@ from app.features.auth.model import User, UserRole
 
 def seed_admin(session: Session):
 
-    admin_email = "admin@kodebuddyai@yopmail.com"
+    admin_email = "admin@kodebuddyai.com"
 
     existing_admin = session.exec(
         select(User).where(
@@ -19,6 +17,7 @@ def seed_admin(session: Session):
     ).first()
 
     if existing_admin:
+        print("Admin already exists")
         return
 
     admin_password = os.getenv(
@@ -41,3 +40,5 @@ def seed_admin(session: Session):
 
     session.add(admin)
     session.commit()
+
+    print("Admin created successfully")

@@ -32,11 +32,7 @@ def login_user(
             status_code=401,
             detail="Invalid email or password",
         )
-    if not user:
-        raise HTTPException(
-            status_code = 401,
-            detail= "Invalid email or password",
-        )
+
 
     if not user.is_active:
         raise HTTPException(
