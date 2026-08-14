@@ -86,7 +86,7 @@ async def forgot_password_service(data: ForgotPasswordRequest, session: Session)
             "sub": user.email,
             "purpose": "password_reset",
         },
-        expires_delta=timedelta(minutes=60),
+        expires_delta=timedelta(minutes=15),
     )
 
     await send_reset_email(
@@ -118,7 +118,13 @@ def reset_password_service(data: ResetPasswordRequest, session: Session):
             detail="Invalid token",
         )
 
-    email = payload["sub"]
+    email = payload.get("sub")
+
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid token",
+        )
 
     user = session.exec(
         select(User).where(User.email == email)
@@ -191,7 +197,7 @@ def refresh_access_token(
     }
 
     new_access_token = create_access_token(
-        token_data
+        token_data,
     )
 
     new_refresh_token = create_refresh_token(

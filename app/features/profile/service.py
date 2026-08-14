@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
+from app.core.email import send_role_change_email
 from app.features.auth.model import User
 from app.features.profile.schema import (
     UpdateProfile,
@@ -65,7 +66,7 @@ class ProfileService:
         )
 
 
-    def update_user_role(
+    async def update_user_role(
         self,
         user_id: int,
         data: UpdateUserRole,
@@ -78,11 +79,22 @@ class ProfileService:
                 status_code=404,
                 detail="User not found",
             )
+        
+        
+        old_role = user.role
+        new_role = data.role
 
-        user.role = data.role
+        user.role = new_role
         user.updated_at = datetime.now(timezone.utc)
 
         updated_user = self.repository.update(user)
+
+        if old_role != new_role:
+            await send_role_change_email(
+                email=updated_user.email,
+                first_name=updated_user.first_name,
+                new_role=updated_user.role.value,
+            )
 
         return UserResponse(
             message="User role updated successfully",

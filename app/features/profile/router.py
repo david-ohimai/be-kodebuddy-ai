@@ -68,16 +68,15 @@ def update_profile(
     response_model=UserResponse,
     dependencies=[Depends(get_current_admin)],
 )
-def update_user_role(
+async def update_user_role(
     user_id: int,
     data: UpdateUserRole,
     service:ProfileService = Depends(get_auth_service),
 ):
-    return service.update_user_role(
+    return await service.update_user_role(
         user_id,
         data,
     )
-
 
 @router.get(
     "/users/{user_id}",
