@@ -8,6 +8,8 @@ from alembic import context
 from app.core.config import DATABASE_URL
 from sqlmodel import SQLModel
 from app.features.auth.model import User
+from app.features.courses.model import Course
+from app.features.modules.model import Module
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

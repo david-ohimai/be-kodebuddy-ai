@@ -1,25 +1,28 @@
-# class Course(SQLModel, table=True):
-#     __tablename__ = "courses"
+from datetime import datetime
+from sqlmodel import SQLModel, Field
 
-#     id: int | None = Field(
-#         default=None,
-#         primary_key=True,
-#     )
+class Course(SQLModel, table=True):
+    __tablename__ = "courses"
 
-#     title: str
-#     description: str | None = None
+    id: int | None = Field(
+        default=None,
+        primary_key=True,
+    )
 
-#     created_by: int = Field(
-#         foreign_key="users.id",
-#         index=True,
-#     )
+    title: str
+    description: str | None = None
 
-#     is_published: bool = False
+    created_by: int = Field(
+        foreign_key="users.id",
+        index=True,
+    )
 
-#     created_at: datetime = Field(
-#         default_factory=datetime.utcnow
-#     )
+    is_published: bool = False
 
-#     updated_at: datetime = Field(
-#         default_factory=datetime.utcnow
-#     )
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow
+    )
+
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow
+    )
