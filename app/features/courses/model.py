@@ -10,6 +10,12 @@ class Course(SQLModel, table=True):
     title: str = Field(max_length=255)
     description: str | None = None
 
+  # Cohort this course belongs to
+    cohort_id: int = Field(
+        foreign_key="cohorts.id",
+        index=True,
+    )
+
     # Admin who created the course
     created_by: int = Field(
         foreign_key="users.id",
