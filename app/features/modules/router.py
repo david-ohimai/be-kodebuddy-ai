@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
 
 from app.core.auth import get_current_trainer
@@ -47,3 +47,15 @@ def update_module(
     service: ModuleService = Depends(get_module_service),
 ):
     return service.update_module(module_id, data)
+
+
+@router.delete(
+    "/{module_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_module(
+    module_id: int,
+    current_user: User = Depends(get_current_trainer),
+    service: ModuleService = Depends(get_module_service),
+):
+    service.delete_module(module_id)

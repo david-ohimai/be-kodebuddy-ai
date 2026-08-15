@@ -20,3 +20,7 @@ class ModuleRepository:
         self.session.commit()
         self.session.refresh(module)
         return module
+
+    def delete(self, module: Module) -> None:
+        self.session.delete(module)
+        self.session.commit()

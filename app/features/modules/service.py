@@ -39,3 +39,14 @@ class ModuleService:
         module.updated_at = datetime.utcnow()
 
         return self.repository.update(module)
+
+    def delete_module(self, module_id: int) -> None:
+        module = self.repository.get_by_id(module_id)
+
+        if module is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Module not found",
+            )
+
+        self.repository.delete(module)
