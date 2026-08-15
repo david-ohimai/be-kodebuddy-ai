@@ -7,8 +7,8 @@ from sqlmodel import Field, SQLModel
 class Cohort(SQLModel, table=True):
     __tablename__ = "cohorts"
 
-    id: UUID = Field(
-        default_factory=uuid4,
+    id: int | None = Field(
+        default=None,
         primary_key=True,
     )
 
