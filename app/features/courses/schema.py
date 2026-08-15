@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 class CourseCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     description: str | None = None
-
+    cohort_id: int
 
 class CourseUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -21,6 +21,7 @@ class CourseResponse(BaseModel):
     id: int
     title: str
     description: str | None
+    cohort_id: int
     created_by: int
     is_active: bool
     created_at: datetime
