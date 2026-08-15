@@ -6,7 +6,7 @@ from app.core.session import get_session
 from app.features.auth.model import User
 
 from .repository import ModuleRepository
-from .schema import ModuleCreate, ModuleResponse
+from .schema import ModuleCreate, ModuleResponse, ModuleUpdate
 from .service import ModuleService
 
 
@@ -33,3 +33,17 @@ def create_module(
     service: ModuleService = Depends(get_module_service),
 ):
     return service.create_module(data, current_user)
+
+
+
+@router.patch(
+    "/{module_id}",
+    response_model=ModuleResponse,
+)
+def update_module(
+    module_id: int,
+    data: ModuleUpdate,
+    current_user: User = Depends(get_current_trainer),
+    service: ModuleService = Depends(get_module_service),
+):
+    return service.update_module(module_id, data)

@@ -9,6 +9,12 @@ class ModuleCreate(BaseModel):
     order: int = 1
 
 
+class ModuleUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    order: int | None = None
+
+
 class ModuleResponse(BaseModel):
     id: int
     course_id: int
