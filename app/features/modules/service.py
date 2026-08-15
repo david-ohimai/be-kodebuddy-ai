@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from app.features.auth.model import User
 from .model import Module
 from .repository import ModuleRepository
-from .schema import ModuleCreate, ModuleUpdate
+from .schema import ModuleCreate, ModuleUpdate, ReorderModulesRequest
 
 
 class ModuleService:
@@ -50,3 +50,24 @@ class ModuleService:
             )
 
         self.repository.delete(module)
+
+    def reorder_modules(self, data: ReorderModulesRequest) -> list[Module]:
+        requested_ids = [item.id for item in data.modules]
+        modules = self.repository.get_by_ids(requested_ids)
+
+        found_ids = {module.id for module in modules}
+        missing_ids = set(requested_ids) - found_ids
+
+        if missing_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Module(s) not found: {sorted(missing_ids)}",
+            )
+
+        order_map = {item.id: item.order for item in data.modules}
+
+        for module in modules:
+            module.order = order_map[module.id]
+            module.updated_at = datetime.utcnow()
+
+        return self.repository.bulk_update_order(modules)

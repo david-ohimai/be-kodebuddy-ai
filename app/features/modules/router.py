@@ -6,7 +6,7 @@ from app.core.session import get_session
 from app.features.auth.model import User
 
 from .repository import ModuleRepository
-from .schema import ModuleCreate, ModuleResponse, ModuleUpdate
+from .schema import ModuleCreate, ModuleResponse, ModuleUpdate, ReorderModulesRequest
 from .service import ModuleService
 
 
@@ -34,6 +34,17 @@ def create_module(
 ):
     return service.create_module(data, current_user)
 
+
+@router.patch(
+    "/reorder",
+    response_model=list[ModuleResponse],
+)
+def reorder_modules(
+    data: ReorderModulesRequest,
+    current_user: User = Depends(get_current_trainer),
+    service: ModuleService = Depends(get_module_service),
+):
+    return service.reorder_modules(data)
 
 
 @router.patch(

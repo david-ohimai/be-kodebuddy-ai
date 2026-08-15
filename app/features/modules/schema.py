@@ -14,6 +14,14 @@ class ModuleUpdate(BaseModel):
     description: str | None = None
     order: int | None = None
 
+class ModuleOrderItem(BaseModel):
+    id: int
+    order: int
+
+
+class ReorderModulesRequest(BaseModel):
+    modules: list[ModuleOrderItem]
+
 
 class ModuleResponse(BaseModel):
     id: int
