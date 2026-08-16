@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,7 +32,7 @@ class CohortUpdate(BaseModel):
 
 
 class CohortResponse(CohortBase):
-    id: UUID
+    id: int
     created_by: int
     created_at: datetime
     updated_at: datetime

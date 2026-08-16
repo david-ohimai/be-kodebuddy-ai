@@ -1,4 +1,3 @@
-from uuid import UUID
 
 from fastapi import HTTPException, status
 
@@ -37,7 +36,7 @@ class CohortService:
 
     def get_cohort(
         self,
-        cohort_id: UUID,
+        cohort_id: int,
     ) -> Cohort:
 
         cohort = self.repository.get_by_id(cohort_id)
@@ -63,7 +62,7 @@ class CohortService:
 
     def update_cohort(
         self,
-        cohort_id: UUID,
+        cohort_id: int,
         cohort_data: CohortUpdate,
     ) -> Cohort:
 
@@ -92,7 +91,7 @@ class CohortService:
 
     def delete_cohort(
         self,
-        cohort_id: UUID,
+        cohort_id: int,
     ) -> dict:
 
         deleted = self.repository.delete(cohort_id)

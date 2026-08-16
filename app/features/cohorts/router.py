@@ -1,4 +1,3 @@
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
@@ -67,7 +66,7 @@ def get_all_cohorts(
     response_model=CohortResponse,
 )
 def get_cohort(
-    cohort_id: UUID,
+    cohort_id: int,
     current_user: User = Depends(get_current_user),
     service: CohortService = Depends(get_cohort_service),
 ):
@@ -79,7 +78,7 @@ def get_cohort(
     response_model=CohortResponse,
 )
 def update_cohort(
-    cohort_id: UUID,
+    cohort_id: int,
     data: CohortUpdate,
     current_admin: User = Depends(get_current_admin),
     service: CohortService = Depends(get_cohort_service),
@@ -94,7 +93,7 @@ def update_cohort(
     "/{cohort_id}",
 )
 def delete_cohort(
-    cohort_id: UUID,
+    cohort_id: int,
     current_admin: User = Depends(get_current_admin),
     service: CohortService = Depends(get_cohort_service),
 ):
