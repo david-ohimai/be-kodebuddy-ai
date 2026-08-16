@@ -4,9 +4,11 @@ from sqlmodel import Session
 from app.core.auth import get_current_admin, get_current_user
 from app.core.session import get_session
 from app.features.auth.model import User
+from app.features.cohorts.repository import CohortRepository
 
 from .repository import CourseRepository
 from .schema import (
+    AssignLearner,
     AssignTrainer,
     CourseCreate,
     CourseResponse,
@@ -23,7 +25,10 @@ router = APIRouter(
 def get_course_service(
     session: Session = Depends(get_session),
 ):
-    return CourseService(CourseRepository(session))
+    return CourseService(
+        repository=CourseRepository(session),
+        cohort_repository=CohortRepository(session)
+    )
 
 
 # ---------------- ADMIN ----------------
@@ -109,4 +114,18 @@ def get_course(
     return service.get_course(
         course_id,
         current_user,
+    )
+
+@router.post(
+    "/{course_id}/assign-learner",
+)
+def assign_learner(
+    course_id: int,
+    data: AssignLearner,
+    current_admin: User = Depends(get_current_admin),
+    service: CourseService = Depends(get_course_service),
+):
+    return service.assign_learner(
+        course_id,
+        data.learner_id,
     )

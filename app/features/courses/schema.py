@@ -17,6 +17,10 @@ class AssignTrainer(BaseModel):
     trainer_id: int
 
 
+class AssignLearner(BaseModel):
+    learner_id: int
+
+
 class CourseResponse(BaseModel):
     id: int
     title: str
