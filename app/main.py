@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.features.auth.router import router as user_router
 from app.features.profile.router import router as profile_router
 from app.features.cohorts.router import router as cohorts_router
+from app.features.courses.router import router as course_router
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
@@ -17,7 +18,7 @@ app = FastAPI(
 app.include_router(user_router)
 app.include_router(profile_router)
 app.include_router(cohorts_router)
-
+app.include_router(course_router)
 
 @app.get("/")
 def home():
