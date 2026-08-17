@@ -64,10 +64,10 @@ KodeBuddy Team
 
 async def send_role_change_email(
     email: str,
-    first_name: str | None,
+    full_name: str | None,
     new_role: str,
 ):
-    name = first_name or "there"
+    name = full_name or "there"
 
     message = MessageSchema(
         subject="Your KodeBuddy Role Has Been Updated",
