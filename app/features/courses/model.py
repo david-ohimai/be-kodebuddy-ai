@@ -58,3 +58,30 @@ class CourseTrainer(SQLModel, table=True):
         foreign_key="users.id",
         index=True,
     )
+
+
+class CourseLearner(SQLModel, table=True):
+    """
+    Maps learners to the courses they are assigned to.
+    """
+    __tablename__ = "course_learners"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "course_id",
+            "learner_id",
+            name="uq_course_learner",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    course_id: int = Field(
+        foreign_key="courses.id",
+        index=True,
+    )
+
+    learner_id: int = Field(
+        foreign_key="users.id",
+        index=True,
+    )

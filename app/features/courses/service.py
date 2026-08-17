@@ -3,16 +3,22 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
 from app.features.auth.model import User, UserRole
+from app.features.cohorts.repository import CohortRepository
 
-from .model import Course
+from .model import Course, CourseLearner
 from .repository import CourseRepository
-from .schema import AssignTrainer, CourseCreate, CourseUpdate
+from .schema import AssignTrainer,AssignLearner, CourseCreate, CourseUpdate
 
 
 class CourseService:
 
-    def __init__(self, repository: CourseRepository):
+    def __init__(
+        self, 
+        repository: CourseRepository,
+        cohort_repository: CohortRepository,
+        ):
         self.repository = repository
+        self.cohort_repository = cohort_repository
 
     # ---------- ADMIN ----------
 
@@ -22,9 +28,18 @@ class CourseService:
         admin_id: int,
     ) -> Course:
 
+        cohort = self.cohort_repository.get_by_id(data.cohort_id)
+
+        if not cohort:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cohort not found.",
+            )
+
         course = Course(
             title=data.title,
             description=data.description,
+            cohort_id=data.cohort_id,
             created_by=admin_id,
         )
 
@@ -51,19 +66,104 @@ class CourseService:
         course = self.get_course_for_admin(course_id)
         self.repository.delete(course)
 
+    # ---------- TRAINER ASSIGNMENT ----------
     def assign_trainer(
         self,
         course_id: int,
         trainer_id: int,
     ):
+        # Check if the course exists and is accessible by the admin
         course = self.get_course_for_admin(course_id)
 
+        # Check if the trainer exists and has the correct role
+        trainer = self.repository.get_user_by_id(trainer_id)
+
+        if trainer is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Trainer not found.",
+            )
+
+        # Check if the user is a trainer
+        if trainer.role != UserRole.TRAINER:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only trainers can be assigned to a course.",
+            )
+
+        # Check if the trainer is already assigned to the course
+        existing = self.repository.get_course_trainer(
+            course_id,
+            trainer_id,
+        )
+
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Trainer is already assigned to this course.",
+            )
+
+        # Assign the trainer to the course
         self.repository.assign_trainer(
             course.id,
             trainer_id,
         )
 
         return {"message": "Trainer assigned successfully"}
+
+    # ---------- LEARNER ASSIGNMENT ----------
+    
+    def assign_learner(
+        self,
+        course_id: int,
+        learner_id: int,
+    ) -> CourseLearner:
+        
+        course = self.repository.get_by_id(course_id)
+
+        if course is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Course not found.",
+            )
+
+        learner = self.repository.get_user_by_id(learner_id)
+
+        if learner is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Learner not found.",
+            )
+
+        if learner.role != UserRole.LEARNER:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only learners can be assigned to a course.",
+            )
+
+        existing = self.repository.get_course_learner(
+            course_id,
+            learner_id,
+        )
+
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Learner is already assigned to this course.",
+            )
+
+        assigned_learner = self.repository.assign_learner(
+            course_id,
+            learner_id,
+        )
+
+        if assigned_learner is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to assign learner to the course.",
+            )
+
+        return assigned_learner
 
     # ---------- VIEW COURSES ----------
 
