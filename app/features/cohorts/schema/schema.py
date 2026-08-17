@@ -8,7 +8,7 @@ class CohortBase(BaseModel):
         min_length=2,
         max_length=100,
     )
-
+    is_open: bool = True
     description: str | None = None
 
     start_date: date
@@ -29,6 +29,7 @@ class CohortUpdate(BaseModel):
     description: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    is_open: bool | None = None
 
 
 class CohortResponse(CohortBase):

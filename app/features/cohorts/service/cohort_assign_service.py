@@ -1,10 +1,12 @@
 from fastapi import HTTPException
 
+from app.features.auth.model import UserRole
 from app.features.cohorts.models.cohort_learners import CohortLearner
 from app.features.cohorts.repository.cohort_assign_repo import (
     CohortAssignRepository,
 )
 from app.features.cohorts.repository.repository import CohortRepository
+
 
 
 class CohortAssignService:
@@ -30,6 +32,28 @@ class CohortAssignService:
                 detail="Cohort not found",
             )
 
+        existing = self.repository.get_learner_assignment(
+            cohort_id,
+            learner_id,
+        )
+
+        # Already assigned and active
+        if existing and existing.is_active:
+            raise HTTPException(
+                status_code=400,
+                detail="Learner is already assigned to this cohort",
+            )
+
+        # Previously assigned but inactive
+        if existing:
+            existing.is_active = True
+            existing.completed_at = None
+
+            return self.repository.update_learner_assignment(
+                existing
+            )
+
+        # Never assigned before
         return self.repository.assign_learner(
             cohort_id,
             learner_id,
@@ -48,6 +72,41 @@ class CohortAssignService:
                 detail="Cohort not found",
             )
 
+        trainer = self.repository.get_user_by_id(trainer_id)
+
+        if trainer is None:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found",
+            )
+
+        if trainer.role != UserRole.TRAINER:
+            raise HTTPException(
+                status_code=400,
+                detail="Only users with the trainer role can be assigned as cohort trainers",
+            )
+
+        existing = self.repository.get_trainer_assignment(
+            cohort_id,
+            trainer_id,
+        )
+
+        # Already assigned and active
+        if existing and existing.removed_at is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Trainer is already assigned to this cohort",
+            )
+
+        # Previously assigned but removed
+        if existing:
+            existing.removed_at = None
+
+            return self.repository.update_trainer_assignment(
+                existing
+            )
+
+        # Never assigned before
         return self.repository.assign_trainer(
             cohort_id,
             trainer_id,

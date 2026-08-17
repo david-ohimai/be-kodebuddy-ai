@@ -28,8 +28,7 @@ def upgrade() -> None:
     sa.Column('hashed_password', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('role', sa.Enum('LEARNER', 'TRAINER', 'MENTOR', 'ADMIN', name='userrole'), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('first_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
-    sa.Column('last_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
+    sa.Column('full_name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')

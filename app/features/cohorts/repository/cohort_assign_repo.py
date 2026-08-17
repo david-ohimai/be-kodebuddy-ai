@@ -1,5 +1,6 @@
 from sqlmodel import Session, select, func
 
+from app.features.auth.model import User
 from app.features.cohorts.models.cohort_learners import CohortLearner, CohortTrainer
 
 
@@ -89,3 +90,53 @@ class CohortAssignRepository:
                 CohortLearner.learner_id == learner_id,
             )
         ).first()
+
+    def get_user_by_id(
+        self,
+        user_id: int,
+    ) -> User | None:
+        return self.session.get(User, user_id)
+
+    def get_learner_assignment(
+        self,
+        cohort_id: int,
+        learner_id: int,
+    ) -> CohortLearner | None:
+        statement = select(CohortLearner).where(
+            CohortLearner.cohort_id == cohort_id,
+            CohortLearner.learner_id == learner_id,
+        )
+
+        return self.session.exec(statement).first()
+
+    def get_trainer_assignment(
+        self,
+        cohort_id: int,
+        trainer_id: int,
+    ) -> CohortTrainer | None:
+        statement = select(CohortTrainer).where(
+            CohortTrainer.cohort_id == cohort_id,
+            CohortTrainer.trainer_id == trainer_id,
+        )
+
+        return self.session.exec(statement).first()
+
+    def update_learner_assignment(
+        self,
+        assignment: CohortLearner,
+    ) -> CohortLearner:
+        self.session.add(assignment)
+        self.session.commit()
+        self.session.refresh(assignment)
+
+        return assignment
+
+    def update_trainer_assignment(
+        self,
+        assignment: CohortTrainer,
+    ) -> CohortTrainer:
+        self.session.add(assignment)
+        self.session.commit()
+        self.session.refresh(assignment)
+
+        return assignment

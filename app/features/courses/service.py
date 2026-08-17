@@ -3,8 +3,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
 from app.features.auth.model import User, UserRole
-from app.features.cohorts.repository import CohortRepository
-
+from app.features.cohorts.repository.repository import CohortRepository
 from .model import Course, CourseLearner
 from .repository import CourseRepository
 from .schema import AssignTrainer,AssignLearner, CourseCreate, CourseUpdate
