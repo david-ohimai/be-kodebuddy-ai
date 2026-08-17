@@ -1,5 +1,4 @@
 from datetime import date, datetime, timezone
-from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
 
@@ -21,6 +20,8 @@ class Cohort(SQLModel, table=True):
 
     start_date: date
     end_date: date
+
+    is_open: bool = True
 
     created_by: int = Field(
         foreign_key="users.id"
