@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
-from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.features.cohorts.model import Cohort
-from app.features.cohorts.schema import (
+from app.features.cohorts.models.cohort_learners import CohortLearner
+from app.features.cohorts.models.model import Cohort
+from app.features.cohorts.schema.schema import (
     CohortCreate,
     CohortUpdate,
 )
@@ -34,7 +34,7 @@ class CohortRepository:
 
     def get_by_id(
         self,
-        cohort_id: UUID,
+        cohort_id: int,
     ) -> Cohort | None:
 
         return self.session.get(
@@ -56,9 +56,11 @@ class CohortRepository:
             ).all()
         )
 
+
+
     def update(
         self,
-        cohort_id: UUID,
+        cohort_id: int,
         cohort_data: CohortUpdate,
     ) -> Cohort | None:
 
@@ -84,7 +86,7 @@ class CohortRepository:
 
     def delete(
         self,
-        cohort_id: UUID,
+        cohort_id: int,
     ) -> bool:
 
         cohort = self.get_by_id(cohort_id)
