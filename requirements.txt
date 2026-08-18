@@ -10,3 +10,4 @@ dotenv
 python-jose[cryptography]
 fastapi-mail
 alembic
+langgraph
