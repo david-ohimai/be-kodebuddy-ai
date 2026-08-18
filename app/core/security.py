@@ -6,13 +6,13 @@ from pwdlib import PasswordHash
 from app.core.config import (
     AUTH_SECRET_KEY,
     ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_DAYS,
 )
 load_dotenv()
 
 
 password_hash = PasswordHash.recommended()
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
 def hash_password(password: str) -> str:

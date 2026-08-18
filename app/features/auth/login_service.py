@@ -4,7 +4,11 @@ from fastapi import HTTPException
 from jose import JWTError, jwt
 from sqlmodel import Session, select
 
-from app.core.config import ALGORITHM, AUTH_SECRET_KEY
+from app.core.config import (
+    ALGORITHM,
+    AUTH_SECRET_KEY,
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
+)
 from app.core.email import send_reset_email
 from app.core.security import (
     create_access_token,
@@ -86,7 +90,9 @@ async def forgot_password_service(data: ForgotPasswordRequest, session: Session)
             "sub": user.email,
             "purpose": "password_reset",
         },
-        expires_delta=timedelta(minutes=15),
+        expires_delta=timedelta(
+        minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+    ),
     )
 
     await send_reset_email(
