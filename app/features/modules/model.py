@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import SQLModel, Field
 
 from app.features.courses.model import Course # noqa: F401 — needed so SQLAlchemy registers this table for the FK below
@@ -10,11 +10,13 @@ class Module(SQLModel, table=True):
 
     course_id: int = Field(foreign_key="courses.id", index=True)
 
-    title: str
+    title: str = Field(max_length=255, index=True)
     description: str | None = None
-    order: int = 1
+    order: int = Field(default=1, index=True)
 
     created_by: int = Field(foreign_key="users.id", index=True)
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = Field(default=True, index=True)
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
