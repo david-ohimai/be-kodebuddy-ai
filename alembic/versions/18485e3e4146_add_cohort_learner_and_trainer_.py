@@ -48,7 +48,8 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_cohort_trainers_cohort_id'), 'cohort_trainers', ['cohort_id'], unique=False)
     op.create_index(op.f('ix_cohort_trainers_trainer_id'), 'cohort_trainers', ['trainer_id'], unique=False)
-    op.add_column('cohorts', sa.Column('is_open', sa.Boolean(), nullable=False))
+    op.add_column('cohorts', sa.Column('is_open', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+    op.alter_column('cohorts', 'is_open', server_default=None)
     # ### end Alembic commands ###
 
 
