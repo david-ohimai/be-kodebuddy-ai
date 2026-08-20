@@ -1,25 +1,33 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ModuleCreate(BaseModel):
     course_id: int
-    title: str
+    title: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    order: int = 1
+    order: int = Field(default=1, ge=1)
 
 
 class ModuleUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
     description: str | None = None
-    order: int | None = None
+    order: int | None = Field(
+        default=None,
+        ge=1,
+    )
 
 class ModuleOrderItem(BaseModel):
     id: int
-    order: int
+    order: int = Field(ge=1)
 
 
 class ReorderModulesRequest(BaseModel):
+    course_id: int
     modules: list[ModuleOrderItem]
 
 
@@ -30,6 +38,7 @@ class ModuleResponse(BaseModel):
     description: str | None
     order: int
     created_by: int
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 
