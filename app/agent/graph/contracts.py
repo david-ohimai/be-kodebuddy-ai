@@ -19,47 +19,83 @@ Mapping to the PRD's documented tool list:
     get_assignment_brief(assignment_id)                 -> GetAssignmentBriefFn
     escalate_to_trainer(learner_id, course_id, question, reason)
     -> EscalateToTrainerFn
+
+Entity ids are `int` throughout, matching the backend's primary keys
+(users/courses/modules/assignments/escalations are all int PKs). Only
+`chunk_id` on RetrievedChunk stays `str` — see state.py for why.
 """
 
 from __future__ import annotations
 
 from typing import Protocol
 
-from app.agent.graph.state import RetrievedChunk
+from app.agent.graph.state import (
+    AssignmentBrief,
+    EscalationReason,
+    RetrievedChunk,
+)
 
 
 class SearchCurriculumFn(Protocol):
     """Dev B: scoped similarity search over module content."""
 
     def __call__(
-        self, *, query: str, course_id: str, module_id: str | None = None
+        self, *, query: str, course_id: int, module_id: int | None = None
     ) -> list[RetrievedChunk]: ...
 
 
 class SearchFaqsFn(Protocol):
     """Dev B: same index as curriculum search, filtered to FAQ content type."""
 
-    def __call__(self, *, query: str, course_id: str
-                 ) -> list[RetrievedChunk]: ...
+    def __call__(
+        self, *, query: str, course_id: int
+        ) -> list[RetrievedChunk]: ...
 
 
 class GetAssignmentBriefFn(Protocol):
-    """Dev B: structured lookup (not free-text search)
-    of an assignment brief."""
+    """
+    Dev B: structured lookup (not free-text search) of an assignment brief.
 
-    def __call__(self, assignment_id: str) -> str | None: ...
+    Returns the structured AssignmentBrief (title/description/due_date/
+    maximum_score), not a pre-formatted string — how those fields get
+    phrased into the prompt is decided in prompts/assignment_guidance.py,
+    owned by Dev C.
+    """
+
+    def __call__(self, assignment_id: int) -> AssignmentBrief | None: ...
 
 
 class EscalateToTrainerFn(Protocol):
     """
     Dev B: writes an escalation record for the trainer dashboard to read.
-    Returns the new escalation's id, which the graph surfaces back to the
-    caller (and, eventually, the learner-facing UI).
+    Returns the new escalation row's int id, which the graph surfaces back
+    to the caller (and, eventually, the learner-facing UI).
+
+    `trainer_id` is a `users.id` value - the backend has one unified
+    `users` table (no separate `trainers` table/module), so "the trainer"
+    for a course/cohort is just a user whose role happens to be trainer.
+    The graph doesn't resolve this itself; it's looked up upstream by Dev D
+    and passed through AgentState. It's Optional here because the graph
+    must still be able to escalate rather than silently drop the question
+    even if that lookup failed; Dev B's implementation decides the fallback
+    (e.g. an unassigned-escalations queue) when it's None.
+
+    `reason` is the structured EscalationReason enum, not a free-form
+    string, so escalation metrics can be aggregated by category. `detail`
+    carries any free-form context (e.g. the actual retrieval score) that
+    doesn't belong in the category itself.
     """
 
     def __call__(
-        self, *, learner_id: str, course_id: str, question: str, reason: str
-    ) -> str: ...
+        self,
+        *,
+        learner_id: int,
+        course_id: int,
+        trainer_id: int | None,
+        question: str,
+        reason: EscalationReason,
+        detail: str | None = None,
+    ) -> int: ...
 
 
 class LLMClient(Protocol):
