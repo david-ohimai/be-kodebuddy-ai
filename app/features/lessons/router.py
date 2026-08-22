@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
 
-from app.core.auth import get_current_user, get_current_trainer
+from app.core.auth import get_current_user, get_current_trainer_or_admin
 from app.core.session import get_session
 from app.features.auth.model import User
 
@@ -29,7 +29,7 @@ def get_lesson_service(
 )
 def create_lesson(
     data: LessonCreate,
-    current_user: User = Depends(get_current_trainer),
+    current_user: User = Depends(get_current_trainer_or_admin),
     service: LessonService = Depends(get_lesson_service),
 ):
     return service.create_lesson(data, current_user)
@@ -65,7 +65,7 @@ def get_lesson(
 )
 def reorder_lessons(
     data: ReorderLessonsRequest,
-    current_user: User = Depends(get_current_trainer),
+    current_user: User = Depends(get_current_trainer_or_admin),
     service: LessonService = Depends(get_lesson_service),
 ):
     return service.reorder_lessons(data, current_user)
@@ -78,7 +78,7 @@ def reorder_lessons(
 def update_lesson(
     lesson_id: int,
     data: LessonUpdate,
-    current_user: User = Depends(get_current_trainer),
+    current_user: User = Depends(get_current_trainer_or_admin),
     service: LessonService = Depends(get_lesson_service),
 ):
     return service.update_lesson(lesson_id, data, current_user)
@@ -90,7 +90,7 @@ def update_lesson(
 )
 def delete_lesson(
     lesson_id: int,
-    current_user: User = Depends(get_current_trainer),
+    current_user: User = Depends(get_current_trainer_or_admin),
     service: LessonService = Depends(get_lesson_service),
 ):
     service.delete_lesson(lesson_id, current_user)
