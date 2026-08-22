@@ -6,6 +6,7 @@ from app.features.courses.router import router as course_router
 from app.features.cohorts.router.router import router as cohorts_router
 from app.features.cohorts.router.assign_cohort_router import router as assign_cohorts_router
 from app.features.lessons.router import router as lesson_router
+from app.features.progress.router import router as progress_router
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
@@ -25,6 +26,7 @@ app.include_router(course_router)
 app.include_router(cohorts_router)
 app.include_router(assign_cohorts_router)
 app.include_router(lesson_router)
+app.include_router(progress_router)
 
 
 @app.get("/")
