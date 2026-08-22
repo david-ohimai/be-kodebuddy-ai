@@ -97,6 +97,32 @@ def verify_learner_course_access(
             detail="You do not have access to this course",
         )
 
+    
+def verify_mentor_course_access(
+    session: Session,
+    current_user: User,
+    course_id: int,
+) -> None:
+ 
+    if current_user.role != UserRole.MENTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mentor access required",
+        )
+
+    course = session.get(Course, course_id)
+
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You are not authorized to access this course",
+    )
+
 
 class ModuleService:
     def __init__(self, repository: ModuleRepository, session: Session):
@@ -146,11 +172,11 @@ class ModuleService:
                 detail="Module not found",
             )
 
-        # Admin
+        # Admin can view everything.
         if current_user.role == UserRole.ADMIN:
             return module
         
-        # Trainer
+        # Trainer can view modules in assigned courses.
         if current_user.role == UserRole.TRAINER:
             verify_trainer_module_access(
                 session=self.session,
@@ -159,9 +185,18 @@ class ModuleService:
             )
             return module
 
-        # Learner
+        # Learner can view modules in assigned courses.
         if current_user.role == UserRole.LEARNER:
             verify_learner_course_access(
+                session=self.session,
+                current_user=current_user,
+                course_id=module.course_id,
+            )
+            return module
+
+         # Mentor can view only where explicitly authorized.
+        if current_user.role == UserRole.MENTOR:
+            verify_mentor_course_access(
                 session=self.session,
                 current_user=current_user,
                 course_id=module.course_id,
@@ -203,6 +238,14 @@ class ModuleService:
         # Learner
         elif current_user.role == UserRole.LEARNER:
             verify_learner_course_access(
+                session=self.session,
+                current_user=current_user,
+                course_id=course_id,
+            )
+
+        # Mentor.
+        elif current_user.role == UserRole.MENTOR:
+            verify_mentor_course_access(
                 session=self.session,
                 current_user=current_user,
                 course_id=course_id,
