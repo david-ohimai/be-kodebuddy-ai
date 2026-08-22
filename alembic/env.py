@@ -15,6 +15,8 @@ from app.features.cohorts.models.cohort_learners import (
 )
 from app.features.courses.model import Course, CourseTrainer
 from app.features.modules.model import Module
+from app.features.assignments.model import Assignment
+from app.features.resources.model import Resource, ResourceType
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
