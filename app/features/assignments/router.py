@@ -23,7 +23,7 @@ from app.features.modules.repository import ModuleRepository
 
 
 router = APIRouter(
-    prefix="/assignments",
+    prefix="/modules/{module_id}/assignments",
     tags=["Assignments"],
 )
 
@@ -47,11 +47,13 @@ def get_assignment_service(
     status_code=status.HTTP_201_CREATED,
 )
 def create_assignment(
+    module_id: int,
     data: AssignmentCreate,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
     return service.create_assignment(
+        module_id,
         data,
         current_user,
     )
@@ -62,7 +64,7 @@ def create_assignment(
     response_model=list[AssignmentResponse],
 )
 def get_all_assignments(
-    module_id: int | None = None,
+    module_id: int,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
@@ -76,11 +78,13 @@ def get_all_assignments(
     response_model=AssignmentResponse,
 )
 def get_assignment_by_id(
+    module_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
     return service.get_assignment(
+        module_id,
         assignment_id,
     )
 
@@ -90,12 +94,14 @@ def get_assignment_by_id(
     response_model=AssignmentResponse,
 )
 def update_assignment(
+    module_id: int,
     assignment_id: int,
     data: AssignmentUpdate,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
     return service.update_assignment(
+        module_id,
         assignment_id,
         data,
         current_user,
@@ -106,12 +112,15 @@ def update_assignment(
     "/{assignment_id}",
     response_model=AssignmentResponse,
 )
+
 def delete_assignment(
+    module_id: int,
     assignment_id: int,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
     return service.delete_assignment(
+        module_id,
         assignment_id,
         current_user,
     )

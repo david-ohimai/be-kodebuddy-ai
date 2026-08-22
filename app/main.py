@@ -9,12 +9,6 @@ from app.features.assignments.router import router as assignment_router
 from app.features.resources.router import router as resource_router
 from app.features.submissions.router import router as submission_router
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     create_db_and_tables()
-#     yield
-
-
 app = FastAPI(
     title="KodeBuddy Backend API",
     version="1.0.0",

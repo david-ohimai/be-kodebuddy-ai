@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AssignmentCreate(BaseModel):
-    module_id: int
 
     title: str = Field(
         min_length=2,
