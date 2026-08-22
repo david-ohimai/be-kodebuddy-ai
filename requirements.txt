@@ -1,4 +1,4 @@
-fastapi 
+fastapi
 uvicorn 
 sqlmodel 
 psycopg[binary]
@@ -10,3 +10,4 @@ dotenv
 python-jose[cryptography]
 fastapi-mail
 alembic
+langgraph

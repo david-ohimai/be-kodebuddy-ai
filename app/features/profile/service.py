@@ -92,7 +92,7 @@ class ProfileService:
         if old_role != new_role:
             await send_role_change_email(
                 email=updated_user.email,
-                first_name=updated_user.first_name,
+                full_name=updated_user.full_name,
                 new_role=updated_user.role.value,
             )
 

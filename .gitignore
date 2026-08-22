@@ -1,6 +1,11 @@
+venv/
 .venv/
 __pycache__/
 *.pyc
 .env
 .vscode/
 *.py[cod]
+.mypy_cache
+.coverage
+.DS_Store
+tmp/

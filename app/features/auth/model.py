@@ -35,12 +35,7 @@ class User(SQLModel, table=True):
 
     is_active: bool = True
 
-    first_name: str | None = Field(
-        default=None,
-        max_length=100,
-    )
-
-    last_name: str | None = Field(
+    full_name: str | None = Field(
         default=None,
         max_length=100,
     )
