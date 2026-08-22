@@ -467,19 +467,19 @@ def make_route_node(deps: AgentDependencies):
         )
 
         draft = (state.get("draft_response") or "").strip()
-        if draft:
+        safe_to_show = draft and state.get("escalation_reason") != EscalationReason.POLICY_VIOLATION
+
+        if safe_to_show:
             fallback_message = (
                 "I'm not fully confident I can give you a reliable answer to "
-                "this one, so I've passed it on to your trainer "
-                "— they'll "
+                "this one, so I've passed it on to your trainer — they'll "
                 "follow up with you directly. In the meantime, here's what I "
                 f"found, which may still help:\n\n{draft}"
             )
         else:
             fallback_message = (
                 "I'm not confident I can give you a reliable answer here, so "
-                "I've passed this on to your trainer "
-                "— they'll follow up with "
+                "I've passed this on to your trainer — they'll follow up with "
                 "you directly."
             )
 
