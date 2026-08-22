@@ -17,15 +17,13 @@ class AssignmentRepository:
     def create(
         self,
         assignment_data: AssignmentCreate,
+        module_id: int,
         created_by: int,
     ) -> Assignment:
 
         assignment = Assignment(
-            module_id=assignment_data.module_id,
-            title=assignment_data.title,
-            description=assignment_data.description,
-            due_date=assignment_data.due_date,
-            maximum_score=assignment_data.maximum_score,
+            **assignment_data.model_dump(),
+            module_id=module_id,
             created_by=created_by,
             is_active=True,
         )
@@ -54,11 +52,13 @@ class AssignmentRepository:
 
     def get_assignment_by_id(
         self,
+        module_id: int,
         assignment_id: int,
     ) -> Assignment | None:
 
         statement = select(Assignment).where(
             Assignment.id == assignment_id,
+            Assignment.module_id == module_id,
             Assignment.is_active == True,
         )
 

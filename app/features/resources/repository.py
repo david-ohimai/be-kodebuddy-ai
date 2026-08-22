@@ -17,15 +17,13 @@ class ResourceRepository:
     def create(
         self,
         resource_data: ResourceCreate,
+        module_id: int,
         created_by: int,
     ) -> Resource:
 
         resource = Resource(
-            module_id=resource_data.module_id,
-            title=resource_data.title,
-            description=resource_data.description,
-            type=resource_data.type,
-            url=resource_data.url,
+            **resource_data.model_dump(),
+            module_id=module_id,
             created_by=created_by,
             is_active=True,
         )
@@ -38,27 +36,25 @@ class ResourceRepository:
 
     def get_all(
         self,
-        module_id: int | None = None,
+        module_id: int,
     ) -> list[Resource]:
 
         statement = select(Resource).where(
-            Resource.is_active == True
+            Resource.module_id == module_id,
+            Resource.is_active == True,
         )
-
-        if module_id is not None:
-            statement = statement.where(
-                Resource.module_id == module_id
-            )
 
         return list(self.db.exec(statement).all())
 
     def get_by_id(
         self,
         resource_id: int,
+        module_id: int,
     ) -> Resource | None:
 
         statement = select(Resource).where(
             Resource.id == resource_id,
+            Resource.module_id == module_id,
             Resource.is_active == True,
         )
 

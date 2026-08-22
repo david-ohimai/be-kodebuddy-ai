@@ -1,5 +1,4 @@
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from app.features.auth.model import User, UserRole
 from app.features.assignments.model import Assignment
 from app.features.assignments.repository import AssignmentRepository
@@ -22,6 +21,7 @@ class AssignmentService:
 
     def create_assignment(
         self,
+        module_id: int,
         data: AssignmentCreate,
         current_user: User,
     ) -> Assignment:
@@ -36,7 +36,7 @@ class AssignmentService:
             )
 
         module = self.module_repository.get_by_id(
-            data.module_id
+            module_id
         )
 
         if module is None:
@@ -45,20 +45,15 @@ class AssignmentService:
                 detail="Module not found",
             )
 
-        assignment = Assignment(
-            module_id=data.module_id,
-            title=data.title,
-            description=data.description,
-            due_date=data.due_date,
-            maximum_score=data.maximum_score,
-            created_by=current_user.id,
-        )
-
-        return self.repository.create(assignment)
+        return self.repository.create(
+        data,
+        module_id,
+        current_user.id,
+    )
 
     def get_assignments(
         self,
-        module_id: int | None = None,
+        module_id: int,
     ) -> list[Assignment]:
 
         return self.repository.get_all_assignment(
@@ -67,36 +62,48 @@ class AssignmentService:
 
     def get_assignment(
         self,
+        module_id: int,
         assignment_id: int,
     ) -> Assignment:
 
         assignment = self.repository.get_assignment_by_id(
-            assignment_id
+            module_id,
+            assignment_id,
         )
 
         if assignment is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Assignment not found",
+                detail="Assignment not found in this module",
             )
 
         return assignment
     
     def update_assignment(
         self,
+        module_id: int,
         assignment_id: int,
         data: AssignmentUpdate,
         current_user: User,
     ) -> Assignment:
 
+        module = self.module_repository.get_by_id(module_id)
+
+        if module is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Module not found",
+            )
+
         assignment = self.repository.get_assignment_by_id(
-            assignment_id
+            module_id,
+            assignment_id,
         )
 
         if assignment is None:
             raise HTTPException(
-                status_code=404,
-                detail="Assignment not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assignment not found in this module",
             )
 
         if not self._can_manage(
@@ -104,7 +111,7 @@ class AssignmentService:
             current_user,
         ):
             raise HTTPException(
-                status_code=403,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to modify this assignment",
             )
 
@@ -115,28 +122,38 @@ class AssignmentService:
 
     def delete_assignment(
         self,
+        module_id: int,
         assignment_id: int,
         current_user: User,
-    ):
+    ) -> Assignment:
+
+        module = self.module_repository.get_by_id(module_id)
+
+        if module is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Module not found",
+            )
 
         assignment = self.repository.get_assignment_by_id(
-            assignment_id
+            module_id,
+            assignment_id,
         )
 
         if assignment is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Assignment not found.",
+                detail="Assignment not found in this module",
             )
 
         if not self._can_manage(
-                    assignment,
-                    current_user,
-                ):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="You do not have permission to delete this assignment",
-                    )
+            assignment,
+            current_user,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to delete this assignment",
+            )
 
         return self.repository.delete(
             assignment

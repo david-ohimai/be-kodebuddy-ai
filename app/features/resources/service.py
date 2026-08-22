@@ -22,6 +22,7 @@ class ResourceService:
 
     def create_resource(
         self,
+        module_id: int,
         data: ResourceCreate,
         current_user: User,
     ) -> Resource:
@@ -36,7 +37,7 @@ class ResourceService:
             )
 
         module = self.module_repository.get_by_id(
-            data.module_id
+            module_id
         )
 
         if module is None:
@@ -45,52 +46,72 @@ class ResourceService:
                 detail="Module not found",
             )
 
-        resource = Resource(
-            module_id=data.module_id,
-            title=data.title,
-            description=data.description,
-            type=data.type,
-            url=data.url,
-            created_by=current_user.id,
+        return self.repository.create(
+            data,
+            module_id,
+            current_user.id,
         )
-
-        return self.repository.create(resource)
 
     def get_resources(
         self,
-        module_id: int | None = None,
-    ):
-        return self.repository.get_all(module_id)
+        module_id: int,
+    ) -> list[Resource]:
+
+        module = self.module_repository.get_by_id(
+            module_id
+        )
+
+        if module is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Module not found",
+            )
+
+        return self.repository.get_all(
+            module_id
+        )
 
     def get_resource(
         self,
+        module_id: int,
         resource_id: int,
     ) -> Resource:
 
-        resource = self.repository.get_by_id(resource_id)
+        module = self.module_repository.get_by_id(
+            module_id
+        )
+
+        if module is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Module not found",
+            )
+
+        resource = self.repository.get_by_id(
+            resource_id,
+            module_id,
+        )
 
         if resource is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Resource not found.",
+                detail="Resource not found in this module",
             )
 
         return resource
 
     def update_resource(
         self,
+        module_id: int,
         resource_id: int,
         data: ResourceUpdate,
         current_user: User,
-    ):
+    ) -> Resource:
 
-        resource = self.repository.get_by_id(resource_id)
-
-        if resource is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Resource not found.",
-            )
+        resource = self.get_resource(
+            module_id,
+            resource_id,
+        )
 
         if not self._can_manage(
             resource,
@@ -108,17 +129,15 @@ class ResourceService:
 
     def delete_resource(
         self,
+        module_id: int,
         resource_id: int,
         current_user: User,
-    ):
+    ) -> Resource:
 
-        resource = self.repository.get_by_id(resource_id)
-
-        if resource is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Resource not found.",
-            )
+        resource = self.get_resource(
+            module_id,
+            resource_id,
+        )
 
         if not self._can_manage(
             resource,
@@ -129,7 +148,9 @@ class ResourceService:
                 detail="You do not have permission to delete this resource",
             )
 
-        return self.repository.delete(resource)
+        return self.repository.delete(
+            resource
+        )
 
     def _can_manage(
         self,

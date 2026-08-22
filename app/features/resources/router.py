@@ -6,21 +6,24 @@ from app.core.session import get_session
 from app.features.auth.model import User
 
 from app.features.modules.repository import ModuleRepository
+
 from app.features.resources.repository import (
     ResourceRepository,
 )
+
 from app.features.resources.schema import (
     ResourceCreate,
     ResourceResponse,
     ResourceUpdate,
 )
+
 from app.features.resources.service import (
     ResourceService,
 )
 
 
 router = APIRouter(
-    prefix="/resources",
+    prefix="/modules/{module_id}/resources",
     tags=["Resources"],
 )
 
@@ -44,11 +47,13 @@ def get_resource_service(
     status_code=status.HTTP_201_CREATED,
 )
 def create_resource(
+    module_id: int,
     data: ResourceCreate,
     current_user: User = Depends(get_current_user),
     service: ResourceService = Depends(get_resource_service),
 ):
     return service.create_resource(
+        module_id,
         data,
         current_user,
     )
@@ -59,7 +64,7 @@ def create_resource(
     response_model=list[ResourceResponse],
 )
 def get_all_resources(
-    module_id: int | None = None,
+    module_id: int,
     current_user: User = Depends(get_current_user),
     service: ResourceService = Depends(get_resource_service),
 ):
@@ -73,11 +78,13 @@ def get_all_resources(
     response_model=ResourceResponse,
 )
 def get_resource_by_id(
+    module_id: int,
     resource_id: int,
     current_user: User = Depends(get_current_user),
     service: ResourceService = Depends(get_resource_service),
 ):
     return service.get_resource(
+        module_id,
         resource_id,
     )
 
@@ -87,12 +94,14 @@ def get_resource_by_id(
     response_model=ResourceResponse,
 )
 def update_resource(
+    module_id: int,
     resource_id: int,
     data: ResourceUpdate,
     current_user: User = Depends(get_current_user),
     service: ResourceService = Depends(get_resource_service),
 ):
     return service.update_resource(
+        module_id,
         resource_id,
         data,
         current_user,
@@ -104,11 +113,13 @@ def update_resource(
     response_model=ResourceResponse,
 )
 def delete_resource(
+    module_id: int,
     resource_id: int,
     current_user: User = Depends(get_current_user),
     service: ResourceService = Depends(get_resource_service),
 ):
     return service.delete_resource(
+        module_id,
         resource_id,
         current_user,
     )

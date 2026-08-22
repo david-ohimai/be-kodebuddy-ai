@@ -5,12 +5,8 @@ from app.features.modules.router import router as module_router
 from app.features.courses.router import router as course_router
 from app.features.cohorts.router.router import router as cohorts_router
 from app.features.cohorts.router.assign_cohort_router import router as assign_cohorts_router
-
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     create_db_and_tables()
-#     yield
-
+from app.features.assignments.router import router as assignment_router
+from app.features.resources.router import router as resources_router
 
 app = FastAPI(
     title="KodeBuddy Backend API",
@@ -23,6 +19,8 @@ app.include_router(module_router)
 app.include_router(course_router)
 app.include_router(cohorts_router)
 app.include_router(assign_cohorts_router)
+app.include_router(assignment_router)
+app.include_router(resources_router)
 
 
 @app.get("/")

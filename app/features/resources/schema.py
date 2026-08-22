@@ -6,8 +6,6 @@ from app.features.resources.model import ResourceType
 
 
 class ResourceCreate(BaseModel):
-    module_id: int
-
     title: str = Field(
         min_length=2,
         max_length=255,
