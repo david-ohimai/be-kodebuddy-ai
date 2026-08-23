@@ -4,7 +4,6 @@ from sqlmodel import Session
 
 from app.core.auth import (
     get_current_admin,
-    get_current_learner,
     get_current_user,
 )
 from app.core.session import get_session
@@ -12,7 +11,6 @@ from app.features.auth.model import User
 from app.features.cohorts.repository.repository import CohortRepository
 from app.features.cohorts.schema.schema import (
     CohortCreate,
-    CohortLearnerResponse,
     CohortResponse,
     CohortUpdate,
 )
