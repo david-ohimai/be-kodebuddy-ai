@@ -19,3 +19,5 @@ langgraph
 # `anthropic` is used by scripts/agent_tools_demo.py only; Dev D's production
 # LLM client will decide what the request path uses.
 anthropic
+langsmith
+pytest

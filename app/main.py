@@ -12,7 +12,7 @@ from app.features.resources.router import router as resource_router
 from app.features.assignments.router import router as assignment_router
 from app.features.submissions.router import router as submission_router
 from app.features.progress.router import router as progress_router
-
+from app.features.agent.router import router as agent_router
 
 app = FastAPI(
     title="KodeBuddy Backend API",
@@ -43,7 +43,7 @@ app.include_router(resource_router)
 app.include_router(assignment_router)
 app.include_router(submission_router)
 app.include_router(progress_router)
-
+app.include_router(agent_router)
 
 @app.get("/")
 def home():
