@@ -86,6 +86,17 @@ def get_current_trainer(
 
     return current_user
 
+def get_current_trainer_or_admin(
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.TRAINER, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=403,
+            detail="Trainer or Admin access required",
+        )
+
+    return current_user
+
 
 def get_current_mentor(
     current_user: User = Depends(get_current_user),
