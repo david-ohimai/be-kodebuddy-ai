@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-
+from fastapi.middleware.cors import CORSMiddleware
 from app.features.auth.router import router as user_router
 from app.features.profile.router import router as profile_router
 from app.features.cohorts.router.router import router as cohorts_router
@@ -16,6 +16,15 @@ from app.features.progress.router import router as progress_router
 app = FastAPI(
     title="KodeBuddy Backend API",
     version="1.0.0",
+)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^http://localhost(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
