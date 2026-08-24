@@ -25,6 +25,7 @@ from app.features.progress.model import UserProgress
 from app.features.assignments.model import Assignment
 from app.features.resources.model import Resource, ResourceType
 from app.features.submissions.model import Submission
+from app.features.mentors.model import MentorLearner
 
 
 # This is the Alembic Config object, which provides
