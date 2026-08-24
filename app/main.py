@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import FRONTEND_URL
 from app.features.auth.router import router as user_router
 from app.features.profile.router import router as profile_router
 from app.features.cohorts.router.router import router as cohorts_router
@@ -19,8 +20,10 @@ app = FastAPI(
 )
 
 
+
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=[FRONTEND_URL],
     allow_origin_regex=r"^http://localhost(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],

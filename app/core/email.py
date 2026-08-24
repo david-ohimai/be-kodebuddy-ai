@@ -8,6 +8,8 @@ from fastapi_mail import (
     MessageType,
 )
 
+from app.core.config import FRONTEND_URL
+
 load_dotenv()
 
 
@@ -28,10 +30,9 @@ async def send_reset_email(
     email: str,
     token: str,
 ):
-    frontend_url = os.getenv("FRONTEND_URL")
-
+    
     reset_link = (
-        f"{frontend_url}/reset-password"
+        f"{FRONTEND_URL}/reset-password"
         f"?token={token}"
     )
 
