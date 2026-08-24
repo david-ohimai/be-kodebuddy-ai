@@ -1,0 +1,12 @@
+[
+  {
+    "course_id": 1,
+    "question": "What is Python?",
+    "answer": "Python is a high-level, general-purpose programming language. It is known for its readability and simplicity."
+  },
+  {
+    "course_id": 1,
+    "question": "How do I define a function in Python?",
+    "answer": "You define a function in Python using the 'def' keyword followed by the function name and parentheses, for example: def my_function():"
+  }
+]
