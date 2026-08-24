@@ -3,17 +3,20 @@ Tool: search_faqs — same index as curriculum search, filtered to FAQ content.
 
 Owner: Dev B (Retrieval & Tools)
 
-`course_id` is OPTIONAL here, which is a deliberate widening of Dev C's
-original `SearchFaqsFn` protocol. At the time of writing it is still undecided
-whether KodeCamp's FAQs are per-course or general (they are being supplied as a
-JSON file for ingestion rather than modelled as a table). An optional filter
-serves both outcomes without blocking Dev C or Dev D on that answer:
+`course_id` is REQUIRED, matching `SearchFaqsFn` in graph/contracts.py.
 
-  * per-course FAQs  -> pass course_id, behaves as originally specified
-  * general FAQs     -> omit it, searches every course the learner is in
+An earlier revision made it optional, to hedge against the still-open question
+of whether KodeCamp's FAQs are per-course or general. That hedge is withdrawn:
+an implementation that disagrees with its own published contract is worse than
+one that is provisionally too narrow. The graph passes `course_id` on every
+call today (nodes.py::retrieve), so nothing is lost by requiring it.
 
-Note that omitting `course_id` still does not widen *access*: the underlying
-query joins `course_learners` either way, so an unscoped FAQ search covers the
+If the FAQs turn out to be general rather than per-course, widening this back
+to `int | None` is a backward-compatible change — adding a default breaks no
+existing caller — and the repository already supports it (`search_content`
+treats `course_id=None` as "every course this learner is enrolled in").
+Whichever way it lands, access does not widen: the underlying query joins
+`course_learners` regardless, so an unscoped FAQ search would still cover the
 learner's own courses and nothing else.
 """
 
@@ -42,15 +45,14 @@ def make_search_faqs(
     def search_faqs(
         *,
         query: str,
-        course_id: int | None = None,
+        course_id: int,
     ) -> list[RetrievedChunk]:
         """
         Search FAQ content the learner is entitled to see.
 
         Args:
             query: the learner's question, in natural language.
-            course_id: optional course filter. When omitted, searches FAQs
-                across every course the learner is enrolled in.
+            course_id: course to search within. Required, per SearchFaqsFn.
 
         Returns:
             Chunks ordered most-similar first; empty when nothing matches.

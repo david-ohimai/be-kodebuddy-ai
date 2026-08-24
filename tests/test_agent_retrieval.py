@@ -74,24 +74,30 @@ class _FakeSession:
 
 
 def _row(**overrides) -> dict:
-    """A row shaped like the assignment lookup's SELECT."""
+    """
+    A row shaped like the assignment lookup's SELECT.
+
+    Types mirror the real columns: `assignments.due_date` is a DATETIME and
+    `assignments.maximum_score` is a FLOAT.
+    """
     base = {
         "assignment_id": 2,
         "course_id": 1,
         "module_id": 3,
         "title": "Build a FastAPI CRUD router",
         "description": "Implement create, read, update and delete endpoints.",
-        "due_date": dt.date(2026, 9, 1),
-        "maximum_score": 100,
+        "due_date": dt.datetime(2026, 9, 1, 23, 59, tzinfo=dt.timezone.utc),
+        "maximum_score": 100.0,
     }
     base.update(overrides)
     return base
 
 
-def test_assignment_brief_serialises_due_date_as_an_iso_string():
+def test_assignment_brief_reduces_a_datetime_due_date_to_an_iso_date():
     """
-    Dev C's AssignmentBrief types due_date as an ISO string, not a date, so
-    the brief carries no datetime dependency across a process boundary.
+    `assignments.due_date` is a DATETIME, but Dev C's prompt renders the value
+    verbatim as "Due: {due_date}". Passing the full timestamp through would put
+    "2026-09-01T23:59:00+00:00" in front of the model instead of a plain date.
     """
     repository = AgentRepository(session=_FakeSession(_row()), learner_id=4)  # type: ignore[arg-type]
 
@@ -100,6 +106,27 @@ def test_assignment_brief_serialises_due_date_as_an_iso_string():
     assert brief is not None
     assert brief["due_date"] == "2026-09-01"
     assert isinstance(brief["due_date"], str)
+
+
+def test_assignment_brief_narrows_an_integral_float_score_to_int():
+    repository = AgentRepository(session=_FakeSession(_row()), learner_id=4)  # type: ignore[arg-type]
+
+    brief = repository.get_assignment(2)
+
+    assert brief["maximum_score"] == 100
+    assert isinstance(brief["maximum_score"], int)
+
+
+def test_assignment_brief_never_truncates_a_fractional_score():
+    """
+    `maximum_score` is a FLOAT column. int() would turn 92.5 into 92 and show
+    the learner a maximum that does not exist.
+    """
+    repository = AgentRepository(  # type: ignore[arg-type]
+        session=_FakeSession(_row(maximum_score=92.5)), learner_id=4
+    )
+
+    assert repository.get_assignment(2)["maximum_score"] == 92.5
 
 
 def test_assignment_brief_passes_through_an_already_string_due_date():
@@ -261,7 +288,13 @@ def test_enrolled_learner_sees_only_their_own_courses(session):
 
 @postgres
 def test_unscoped_search_never_leaves_the_learners_courses(session):
-    """Omitting course_id widens the search, but never widens access."""
+    """
+    Omitting course_id widens the search, but never widens access.
+
+    `None` is permitted in the result set: that is global FAQ content, which
+    belongs to no course and is readable by any learner. Every non-global
+    chunk must still come from a course this learner is enrolled in.
+    """
     learner_id = int(os.environ["TEST_LEARNER_ID"])
 
     repository = AgentRepository(session=session, learner_id=learner_id)
@@ -271,7 +304,58 @@ def test_unscoped_search_never_leaves_the_learners_courses(session):
         query_embedding=embed_query("anything at all"), limit=50
     )
 
-    assert {chunk["course_id"] for chunk in chunks} <= enrolled
+    assert {chunk["course_id"] for chunk in chunks} <= enrolled | {None}
+
+    for chunk in chunks:
+        if chunk["course_id"] is None:
+            assert chunk["content_type"] == "faq", (
+                "Only FAQ content may be global; "
+                f"got a global {chunk['content_type']} chunk."
+            )
+
+
+@postgres
+def test_global_faqs_are_visible_without_course_enrollment(session):
+    """
+    The MVP FAQ set is global (course_id NULL). Those rows must be reachable
+    by any enrolled learner, in any course context.
+
+    Expects at least one ingested FAQ chunk with course_id NULL.
+    """
+    learner_id = int(os.environ["TEST_LEARNER_ID"])
+    repository = AgentRepository(session=session, learner_id=learner_id)
+
+    chunks = repository.search_content(
+        query_embedding=embed_query("How do I submit an assignment?"),
+        content_type="faq",
+        limit=50,
+    )
+
+    assert any(chunk["course_id"] is None for chunk in chunks), (
+        "No global FAQ content reachable — check that ingestion wrote "
+        "course_id NULL rows and that the column is nullable."
+    )
+
+
+@postgres
+def test_global_visibility_is_limited_to_faq_content(session):
+    """
+    A NULL course_id must NOT make curriculum or resource content universally
+    visible. Those rows fail closed: unreachable rather than unscoped.
+    """
+    learner_id = int(os.environ["TEST_LEARNER_ID"])
+    repository = AgentRepository(session=session, learner_id=learner_id)
+    enrolled = set(repository.enrolled_course_ids())
+
+    for content_type in ("curriculum", "resource"):
+        chunks = repository.search_content(
+            query_embedding=embed_query("anything at all"),
+            content_type=content_type,
+            limit=50,
+        )
+        assert all(chunk["course_id"] in enrolled for chunk in chunks), (
+            f"{content_type} content leaked with a NULL or unenrolled course_id."
+        )
 
 
 @postgres

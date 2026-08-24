@@ -26,11 +26,21 @@ needs to change.
 
     content_embeddings
         id            integer primary key
-        course_id     integer not null  -> courses.id
+        course_id     integer NULL      -> courses.id   (see below)
         module_id     integer null      -> modules.id
         content_type  text not null     -- 'curriculum' | 'faq' | 'resource'
         chunk_text    text not null
         embedding     vector(N) not null
+
+    NOTE FOR DEV A: `course_id` must be NULLABLE. The MVP FAQ set is entirely
+    global — all 15 questions are platform-level ("What is KodeBuddy AI?",
+    "How do I submit an assignment?") and none belong to a course. Ingest them
+    with course_id NULL, module_id NULL, content_type 'faq'.
+
+    Global rows are readable by any authenticated learner, so the search query
+    permits a NULL course_id ONLY for content_type 'faq'. A NULL course_id on
+    curriculum or resource content is unreachable rather than universally
+    visible — a mis-ingested row fails closed, not open.
 
     escalations
         id          integer primary key
@@ -63,6 +73,7 @@ from sqlmodel import Session
 
 from app.agent.embedding_seam import to_pgvector_literal
 from app.agent.types import (
+    FAQ,
     AssignmentBrief,
     ContentStoreUnavailableError,
     ContentType,
@@ -233,16 +244,37 @@ class AgentRepository:
                 1 - (ce.{EMBEDDINGS_VECTOR_COLUMN} <=> CAST(:query_embedding AS vector))
                                                         AS score
             FROM {EMBEDDINGS_TABLE} ce
-            JOIN courses c
-              ON c.id = ce.course_id
-            JOIN course_learners cl
-              ON cl.course_id = ce.course_id
-             AND cl.learner_id = CAST(:learner_id AS INTEGER)
-            WHERE c.is_active IS TRUE
+            WHERE (
+                    -- Global content: belongs to no single course. ONLY FAQ
+                    -- content may be global (see module docstring); a NULL
+                    -- course_id on any other content type is unreachable
+                    -- rather than universally visible, so a bad ingestion
+                    -- row fails closed.
+                    (ce.course_id IS NULL
+                     AND ce.content_type = CAST(:global_content_type AS TEXT))
+                    OR EXISTS (
+                        SELECT 1
+                        FROM course_learners cl
+                        JOIN courses c ON c.id = cl.course_id
+                        WHERE cl.course_id = ce.course_id
+                          AND cl.learner_id = CAST(:learner_id AS INTEGER)
+                          AND c.is_active IS TRUE
+                    )
+                  )
               AND (CAST(:course_id AS INTEGER) IS NULL
-                   OR ce.course_id = CAST(:course_id AS INTEGER))
+                   OR ce.course_id = CAST(:course_id AS INTEGER)
+                   OR ce.course_id IS NULL)
               AND (CAST(:module_id AS INTEGER) IS NULL
                    OR ce.module_id = CAST(:module_id AS INTEGER))
+              -- Content in a deactivated module must stop grounding answers.
+              -- module_id is NULL for global FAQ content, which has no module.
+              AND (ce.module_id IS NULL
+                   OR EXISTS (
+                        SELECT 1
+                        FROM modules m
+                        WHERE m.id = ce.module_id
+                          AND m.is_active IS TRUE
+                   ))
               AND (CAST(:content_type AS TEXT) IS NULL
                    OR ce.content_type = CAST(:content_type AS TEXT))
               AND (CAST(:min_score AS FLOAT) IS NULL
@@ -260,6 +292,7 @@ class AgentRepository:
             "course_id": int(course_id) if course_id is not None else None,
             "module_id": int(module_id) if module_id is not None else None,
             "content_type": content_type,
+            "global_content_type": FAQ,
             "min_score": float(min_score) if min_score is not None else None,
             "limit": effective_limit,
         }
@@ -281,7 +314,13 @@ class AgentRepository:
         chunks: list[RetrievedChunk] = [
             {
                 "chunk_id": str(row["chunk_id"]),
-                "course_id": int(row["course_id"]),
+                # None for global FAQ content, which belongs to no course.
+                # NOTE: Dev C's RetrievedChunk types this as `int`; it needs
+                # to become `int | None`, exactly as `module_id` already is.
+                # Raised with Dev C — see the FAQ note in the module docstring.
+                "course_id": (
+                    int(row["course_id"]) if row["course_id"] is not None else None
+                ),
                 "module_id": (
                     int(row["module_id"]) if row["module_id"] is not None else None
                 ),
@@ -339,6 +378,7 @@ class AgentRepository:
              AND cl.learner_id = CAST(:learner_id AS INTEGER)
             WHERE a.id = CAST(:assignment_id AS INTEGER)
               AND a.is_active IS TRUE
+              AND m.is_active IS TRUE
               AND c.is_active IS TRUE
             LIMIT 1
             """
@@ -390,12 +430,28 @@ class AgentRepository:
             )
             description = ""
 
-        # ISO 8601 string, not a date object: AssignmentBrief keeps itself free
-        # of any datetime dependency so it serialises cleanly across a process
-        # boundary. `due_date` may already be a string on some drivers.
+        # ISO 8601 *date* string, not a datetime: AssignmentBrief keeps itself
+        # free of any datetime dependency so it serialises cleanly across a
+        # process boundary, and Dev C's prompt renders it verbatim as
+        # "Due: {due_date}". `assignments.due_date` is a DATETIME column, so
+        # calling .isoformat() on it directly would put
+        # "2026-09-01T00:00:00+00:00" into the prompt instead of "2026-09-01".
         due_date = row["due_date"]
         if due_date is not None and not isinstance(due_date, str):
+            if hasattr(due_date, "date"):  # datetime -> date
+                due_date = due_date.date()
             due_date = due_date.isoformat()
+
+        # `assignments.maximum_score` is a FLOAT, but Dev C's AssignmentBrief
+        # types it as int. Truncating with int() would silently turn a
+        # maximum of 92.5 into 92 and show the learner the wrong total, so
+        # narrow to int only when the value is exactly integral and keep the
+        # float otherwise. Raised with Dev C to widen the annotation.
+        maximum_score = row["maximum_score"]
+        if maximum_score is not None:
+            maximum_score = float(maximum_score)
+            if maximum_score.is_integer():
+                maximum_score = int(maximum_score)
 
         return {
             "assignment_id": int(row["assignment_id"]),
@@ -404,11 +460,7 @@ class AgentRepository:
             "title": row["title"],
             "description": description,
             "due_date": due_date,
-            "maximum_score": (
-                int(row["maximum_score"])
-                if row["maximum_score"] is not None
-                else None
-            ),
+            "maximum_score": maximum_score,
         }
 
     # ------------------------------------------------------------------
