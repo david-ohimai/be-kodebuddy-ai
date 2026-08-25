@@ -10,6 +10,10 @@ from .model import MentorLearner
 from .repository import MentorRepository
 from .schema import AssignedLearnerSummary, MentorLearnerResponse
 
+from datetime import datetime, timezone
+
+from .model import MentorCheckIn
+from .schema import CheckInCreate, CheckInUpdate
 
 def verify_mentor_learner_access(
     session: Session,
@@ -108,3 +112,51 @@ class MentorService:
 
         statement = select(Submission).where(Submission.learner_id == learner_id)
         return list(self.session.exec(statement))
+
+
+
+    def create_check_in(self, mentor: User, data: CheckInCreate) -> MentorCheckIn:
+        verify_mentor_learner_access(self.session, mentor.id, data.learner_id)
+
+        check_in = MentorCheckIn(
+            mentor_id=mentor.id,
+            learner_id=data.learner_id,
+            scheduled_time=data.scheduled_time,
+            notes=data.notes,
+        )
+        return self.repository.create_check_in(check_in)
+
+    def get_my_check_ins(self, mentor: User) -> list[MentorCheckIn]:
+        return self.repository.get_check_ins_for_mentor(mentor.id)
+
+    def get_check_ins_for_learner(
+        self, mentor: User, learner_id: int
+    ) -> list[MentorCheckIn]:
+        verify_mentor_learner_access(self.session, mentor.id, learner_id)
+        return self.repository.get_check_ins_for_learner(mentor.id, learner_id)
+
+    def update_check_in(
+        self, mentor: User, check_in_id: int, data: CheckInUpdate
+    ) -> MentorCheckIn:
+        check_in = self.repository.get_check_in_by_id(check_in_id)
+
+        if check_in is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Check-in not found",
+            )
+
+        if check_in.mentor_id != mentor.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This check-in does not belong to you",
+            )
+
+        update_data = data.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(check_in, field, value)
+
+        check_in.updated_at = datetime.now(timezone.utc)
+
+        return self.repository.update_check_in(check_in)
