@@ -181,6 +181,75 @@ def test_low_relevance_retrieval_triggers_escalation():
     assert escalated["reason"] == EscalationReason.LOW_RETRIEVAL_CONFIDENCE
 
 
+def test_weak_chunks_excluded_from_prompt_but_still_drive_low_confidence(
+):
+    """Regression test for the min_score filtering fix (raised by Dev B):
+    a sub-threshold chunk must not reach the LLM's context, but must still
+    count toward the confidence gate's *unfiltered* top score. Filtering at
+    retrieval instead would turn a weak-hits query into an empty list —
+    indistinguishable from a genuinely empty result — and misfile it as
+    NO_RELEVANT_CONTEXT instead of LOW_RETRIEVAL_CONFIDENCE."""
+    captured = {}
+
+    class CapturingLLM:
+        def complete(self, *, system, user):
+            captured["user"] = user
+            return json_response("some answer", False)
+
+    weak_chunk = good_chunk(text="Barely related junk content.", score=0.1)
+    deps, escalated = make_deps(
+        llm=CapturingLLM(),
+        curriculum_hits=[weak_chunk],
+    )
+    graph = build_agent_graph(deps)
+    result = graph.invoke(base_state())
+
+    # Reached `reason` (not the no_context short-circuit) since the chunk
+    # list itself was non-empty — but the junk text never made it in.
+    assert "Barely related junk content." not in captured["user"]
+    assert "(no relevant context retrieved)" in captured["user"]
+
+    # The gate still saw the real (weak) top score, not an emptied list.
+    assert result["escalated"] is True
+    assert (
+        result["escalation_reason"]
+        == EscalationReason.LOW_RETRIEVAL_CONFIDENCE
+    )
+    assert escalated["reason"] == EscalationReason.LOW_RETRIEVAL_CONFIDENCE
+
+
+def test_prompt_excludes_weak_chunks_but_keeps_relevant_ones_in_mixed_results(
+):
+    captured = {}
+
+    class CapturingLLM:
+        def complete(self, *, system, user):
+            captured["user"] = user
+            return json_response("Grounded answer.", False)
+
+    strong_chunk = good_chunk(
+        chunk_id="c1",
+        text="A relevant, strong match.",
+        score=0.95,
+    )
+    weak_chunk = good_chunk(
+        chunk_id="c2",
+        text="An irrelevant, weak match.",
+        score=0.1,
+    )
+    deps, escalated = make_deps(
+        llm=CapturingLLM(),
+        curriculum_hits=[weak_chunk, strong_chunk],
+    )
+    graph = build_agent_graph(deps)
+    result = graph.invoke(base_state())
+
+    assert "A relevant, strong match." in captured["user"]
+    assert "An irrelevant, weak match." not in captured["user"]
+    assert result["escalated"] is False
+    assert "called" not in escalated
+
+
 def test_model_uncertainty_triggers_escalation_even_with_good_retrieval():
     deps, escalated = make_deps(
         llm_response=json_response("Not totally sure about this one.", True),

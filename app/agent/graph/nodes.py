@@ -46,6 +46,20 @@ from app.agent.prompts.assignment_guidance import (
 )
 from app.agent.prompts.chat import CHAT_SYSTEM_PROMPT, build_user_turn
 
+try:
+    # Dev B's base exception for a broken retrieval pipeline (embedding
+    # provider down, content-embeddings table/pgvector missing). Imported
+    # from `app.agent.types` specifically, not `app.agent.tools` — the
+    # former is a lightweight module with no DB dependency, so graph unit
+    # tests don't need SQLModel/a database installed just to run. If this
+    # import fails (e.g. an early checkout before Dev B's types module
+    # exists), retrieval-failure handling simply never triggers rather than
+    # breaking the whole module at import time.
+    from app.agent.types import AgentRetrievalError
+except ImportError:  # pragma: no cover
+    class AgentRetrievalError(Exception):
+        pass
+
 logger = logging.getLogger("kodebuddy.agent.graph")
 
 # --- Guardrail thresholds (tunable; Dev C owns these) ---
@@ -152,21 +166,45 @@ def make_retrieve_node(deps: AgentDependencies):
         module_id = state.get("module_id")
         question = state["question"]
 
-        assignment_brief = None
-        if state.get("query_type") == QueryType.ASSIGNMENT_GUIDANCE:
-            assignment_id = state.get("assignment_id")
-            if assignment_id:
-                # Full pass-through — no truncation/summarization. An
-                # assignment brief like "Build an algorithm to sort a doubly
-                # linked list" needs "doubly linked list" intact; a naive
-                # heuristic that stops at the first " to "/" that " would
-                # silently drop exactly the detail guidance depends on.
-                assignment_brief = deps.get_assignment_brief(assignment_id)
+        try:
+            assignment_brief = None
+            if state.get("query_type") == QueryType.ASSIGNMENT_GUIDANCE:
+                assignment_id = state.get("assignment_id")
+                if assignment_id:
+                    # Full pass-through - no truncation/summarization. An
+                    # assignment brief like "Build an algorithm to sort a
+                    # doubly linked list" needs "doubly linked list" intact;
+                    # a naive heuristic that stops at the first " to "/" that "
+                    # would silently drop exactly the detail guidance
+                    # depends on.
+                    assignment_brief = deps.get_assignment_brief(assignment_id)
 
-        curriculum_hits = deps.search_curriculum(
-            query=question, course_id=course_id, module_id=module_id
-        )
-        faq_hits = deps.search_faqs(query=question, course_id=course_id)
+            curriculum_hits = deps.search_curriculum(
+                query=question, course_id=course_id, module_id=module_id
+            )
+            faq_hits = deps.search_faqs(query=question, course_id=course_id)
+
+        except AgentRetrievalError as exc:
+            # The retrieval pipeline itself failed - embedding provider
+            # down, content store missing - as opposed to legitimately
+            # finding nothing. Dev B's tools raise rather than return `[]`
+            # specifically so this is distinguishable; honour that by
+            # routing to a dedicated escalation path (see build.py's
+            # conditional edge) instead of either crashing the request or
+            # silently treating it as "no relevant content."
+            logger.error(
+                "retrieve: retrieval infrastructure failure learner=%s "
+                "course=%s: %s",
+                state["learner_id"],
+                course_id,
+                exc,
+            )
+            return {
+                **state,
+                "retrieved_chunks": [],
+                "assignment_brief": None,
+                "retrieval_failed": True,
+            }
 
         chunks: list[RetrievedChunk] = [*curriculum_hits, *faq_hits]
         chunks.sort(key=chunk_score, reverse=True)
@@ -183,9 +221,49 @@ def make_retrieve_node(deps: AgentDependencies):
             **state,
             "retrieved_chunks": chunks,
             "assignment_brief": assignment_brief,
+            "retrieval_failed": False,
         }
 
     return retrieve
+
+
+def make_retrieval_error_node():
+    """
+    Returns the `retrieval_error` node — reached directly from `retrieve`
+    (see build.py's conditional edge) when retrieval raised an
+    AgentRetrievalError, rather than legitimately finding nothing.
+
+    Skips `reason`/`confidence_gate` entirely, same as `no_context`, but
+    stays a separate node and a separate EscalationReason
+    (RETRIEVAL_UNAVAILABLE vs NO_RELEVANT_CONTEXT) — an outage and a
+    curriculum content gap look identical to a learner but need different
+    follow-up from the team, and conflating them in telemetry would hide
+    that.
+    """
+
+    def retrieval_error(state: AgentState) -> AgentState:
+        logger.warning(
+            "retrieval_error: learner=%s course=%s — retrieval infrastructure "
+            "unavailable, escalating without attempting to reason",
+            state["learner_id"],
+            state["course_id"],
+        )
+        return {
+            **state,
+            "draft_response": "",
+            "model_expressed_uncertainty": True,
+            "policy_violation": False,
+            "parser_failed": False,
+            "confidence_score": 0.0,
+            "is_confident": False,
+            "escalation_reason": EscalationReason.RETRIEVAL_UNAVAILABLE,
+            "escalation_detail": (
+                "Curriculum/FAQ retrieval was unavailable when this "
+                "question was asked."
+            ),
+        }
+
+    return retrieval_error
 
 
 def make_no_context_node():
@@ -294,9 +372,21 @@ def make_reason_node(deps: AgentDependencies):
     """Returns the `reason` node, closed over its dependencies."""
 
     def reason(state: AgentState) -> AgentState:
+        # Filtered here, at the prompt boundary, and nowhere else: the
+        # confidence gate (nodes.py::confidence_gate) and the routing
+        # decision after `retrieve` (build.py::_route_after_retrieve) both
+        # read state["retrieved_chunks"] directly, unfiltered. If a
+        # min_score cutoff were applied at retrieval instead (in Dev B's
+        # search tools), a weak-hits query would come back as an empty
+        # list — indistinguishable from a genuinely empty result — and get
+        # logged as NO_RELEVANT_CONTEXT instead of LOW_RETRIEVAL_CONFIDENCE,
+        # collapsing a distinction Dev E's metrics rely on. Filtering only
+        # `chunk_texts` keeps the gate's unfiltered top score intact while
+        # still keeping sub-threshold junk out of what the model reads.
         chunk_texts = [chunk_text(c) for c in state.get(
-            "retrieved_chunks", []
-            )]
+            "retrieved_chunks", [])
+            if chunk_score(c) >= MIN_RETRIEVAL_SCORE
+        ]
         history = state.get("chat_history", [])
         query_type = state.get("query_type")
 
@@ -467,7 +557,15 @@ def make_route_node(deps: AgentDependencies):
         )
 
         draft = (state.get("draft_response") or "").strip()
-        if draft:
+        # A policy-violation draft is, by definition, the thing the
+        # guardrail is supposed to keep from the learner — showing it as
+        # a "may still help" courtesy would leak the exact content the
+        # escalation exists to stop. Withhold the draft for that reason
+        # specifically; every other escalation reason still shows it.
+        safe_to_show_draft = (
+            draft and reason != EscalationReason.POLICY_VIOLATION
+        )
+        if safe_to_show_draft:
             fallback_message = (
                 "I'm not fully confident I can give you a reliable answer to "
                 "this one, so I've passed it on to your trainer "
