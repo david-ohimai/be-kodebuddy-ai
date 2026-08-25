@@ -619,3 +619,45 @@ def test_bool_id_is_rejected_despite_being_an_int_subclass():
         raised = True
 
     assert raised is True
+
+def test_policy_violation_escalation_does_not_leak_the_solution_to_the_learner():
+    """
+    The whole point of POLICY_VIOLATION is to stop a full solution reaching
+    the learner. If route()'s "here's what I found, which may still help"
+    fallback includes the draft on this path, the guardrail is bypassed by
+    the escalation message itself.
+    """
+    leaked_solution = (
+        "Here you go:\n```python\n"
+        "def reverse_string(s):\n"
+        "    result = ''\n"
+        "    for ch in s:\n"
+        "        result = ch + result\n"
+        "    return result\n"
+        "```"
+    )
+    deps, escalated = make_deps(
+        llm_response=json_response(leaked_solution, False),
+        assignment_brief={
+            "title": "Reverse a string",
+            "description": "Build a function that reverses a string.",
+            "due_date": None,
+            "maximum_score": None,
+        },
+        curriculum_hits=[good_chunk()],
+    )
+    graph = build_agent_graph(deps)
+    result = graph.invoke(
+        base_state(
+            query_type=QueryType.ASSIGNMENT_GUIDANCE,
+            assignment_id=42,
+            question="I don't know where to start.",
+        )
+    )
+
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == EscalationReason.POLICY_VIOLATION
+    assert leaked_solution not in result["final_response"], (
+        "Policy-violation escalation leaked the full solution back to the "
+        "learner via the 'may still help' fallback text."
+    )

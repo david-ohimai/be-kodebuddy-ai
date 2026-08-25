@@ -11,11 +11,7 @@ python-jose[cryptography]
 fastapi-mail
 alembic
 langgraph
-
-# --- agent retrieval & tools (Dev B) ---
-# Also needs the pgvector *extension* on the database (CREATE EXTENSION
-# vector) -- that is Dev A's migration, not a pip package. No Python pgvector
-# binding is required: vectors are passed as bound parameters and cast in SQL.
-# `anthropic` is used by scripts/agent_tools_demo.py only; Dev D's production
-# LLM client will decide what the request path uses.
+pgvector
+voyageai
+langchain-text-splitters
 anthropic
