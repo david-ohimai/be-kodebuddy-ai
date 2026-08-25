@@ -17,9 +17,8 @@ class DashboardService:
     def __init__(self, repository: DashboardRepository):
         self.repository = repository
 
-    # ============================================================
-    # ADMIN DASHBOARD
-    # ============================================================
+
+    # ---------- ADMIN DASHBOARD ----------
 
     def get_admin_dashboard(self) -> AdminDashboardResponse:
 
@@ -38,9 +37,8 @@ class DashboardService:
             pending_grades=self.repository.get_pending_grades(),
         )
 
-    # ============================================================
-    # LEARNER DASHBOARD
-    # ============================================================
+
+    # ---------- LEARNER DASHBOARD ----------
 
     def get_learner_dashboard(
         self,
@@ -203,10 +201,9 @@ class DashboardService:
             assignments=assignment_status,
         )
 
-    # ============================================================
-    # TRAINER DASHBOARD
-    # ============================================================
 
+# ---------- TRAINER DASHBOARD ----------
+    
     def get_trainer_dashboard(
         self,
         trainer_id: int,
@@ -217,6 +214,11 @@ class DashboardService:
         )
 
         course_summaries = []
+
+        total_learners = 0
+        total_submissions = 0
+        total_pending_grades = 0
+
 
         for course in courses:
 
@@ -276,9 +278,18 @@ class DashboardService:
                 )
             )
 
+            # Aggregate trainer-level totals
+            total_learners += len(learners)
+            total_submissions += len(submissions)
+            total_pending_grades += pending_grades
+
+
         return TrainerDashboardResponse(
             total_courses=len(courses),
             courses=course_summaries,
+            total_learners=total_learners,
+            total_submissions=total_submissions,
+            pending_grades=total_pending_grades,
         )
 
     # ============================================================
