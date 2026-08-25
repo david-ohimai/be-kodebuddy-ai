@@ -557,7 +557,15 @@ def make_route_node(deps: AgentDependencies):
         )
 
         draft = (state.get("draft_response") or "").strip()
-        if draft:
+        # A policy-violation draft is, by definition, the thing the
+        # guardrail is supposed to keep from the learner — showing it as
+        # a "may still help" courtesy would leak the exact content the
+        # escalation exists to stop. Withhold the draft for that reason
+        # specifically; every other escalation reason still shows it.
+        safe_to_show_draft = (
+            draft and reason != EscalationReason.POLICY_VIOLATION
+        )
+        if safe_to_show_draft:
             fallback_message = (
                 "I'm not fully confident I can give you a reliable answer to "
                 "this one, so I've passed it on to your trainer "

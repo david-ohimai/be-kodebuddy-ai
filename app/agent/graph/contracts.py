@@ -56,7 +56,7 @@ class SearchFaqsFn(Protocol):
     """
 
     def __call__(
-        self, *, query: str, course_id: int | None = None
+        self, *, query: str, course_id: int
         ) -> list[RetrievedChunk]: ...
 
 
