@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-
+from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import FRONTEND_URL
 from app.features.auth.router import router as user_router
 from app.features.profile.router import router as profile_router
 from app.features.cohorts.router.router import router as cohorts_router
@@ -11,11 +12,25 @@ from app.features.resources.router import router as resource_router
 from app.features.assignments.router import router as assignment_router
 from app.features.submissions.router import router as submission_router
 from app.features.progress.router import router as progress_router
+from app.features.mentors.router import router as mentor_router
 from app.features.dashboard.router import router as dashboard_router
+
+
 
 app = FastAPI(
     title="KodeBuddy Backend API",
     version="1.0.0",
+)
+
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_URL],
+    allow_origin_regex=r"^http://localhost(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -31,6 +46,7 @@ app.include_router(resource_router)
 app.include_router(assignment_router)
 app.include_router(submission_router)
 app.include_router(progress_router)
+app.include_router(mentor_router)
 app.include_router(dashboard_router)
 
 @app.get("/")

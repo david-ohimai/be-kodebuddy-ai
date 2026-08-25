@@ -9,6 +9,7 @@ from app.features.lessons.model import Lesson
 from app.features.assignments.model import Assignment
 from app.features.submissions.model import Submission
 from app.features.progress.model import UserProgress
+from app.features.mentors.model import MentorLearner
 
 
 class DashboardRepository:
@@ -88,7 +89,7 @@ class DashboardRepository:
         )
         return len(list(self.session.exec(statement)))
 
-    # ---------- LEARNER ----------
+    # ---------- LEARNER DASHBOARD ----------
     def get_learner_courses(
         self,
         learner_id: int,
@@ -193,7 +194,7 @@ class DashboardRepository:
 
         return self.session.exec(statement).first()
 
-    # ---------- TRAINER ----------
+    # ---------- TRAINER DASHBOARD ----------
     def get_trainer_courses(
         self,
         trainer_id: int,
@@ -277,19 +278,26 @@ class DashboardRepository:
 
         return list(self.session.exec(statement))
 
-    # ---------- MENTOR ----------
+    # ---------- MENTOR DASHBOARD ----------
     def get_mentor_assigned_learners(
         self,
         mentor_id: int,
     ) -> list[User]:
         """
-        This method will be connected to the Mentor -> Learner
-        relationship when the Mentor feature is completed.
-
-        Do not assume a mentor relationship table here.
+        Get a list of learners assigned to a specific mentor.
         """
 
-        raise NotImplementedError(
-            "Mentor learner relationship will be connected "
-            "after the Mentor feature is implemented."
+        statement = (
+            select(User)
+            .join(
+                MentorLearner,
+                User.id == MentorLearner.learner_id,
+            )
+            .where(
+                MentorLearner.mentor_id == mentor_id,
+                User.role == UserRole.LEARNER,
+                User.is_active == True,
+            )
         )
+
+        return list(self.session.exec(statement))

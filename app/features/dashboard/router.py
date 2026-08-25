@@ -57,9 +57,7 @@ def get_mentor_dashboard(
     return service.get_mentor_dashboard(current_user.id)
 
 
-# =========================
-# ADMIN DASHBOARD
-# =========================
+# ---------- ADMIN DASHBOARD ----------
 
 @router.get("/admin")
 def get_admin_dashboard(
