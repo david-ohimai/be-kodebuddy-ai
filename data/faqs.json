@@ -1,11 +1,17 @@
 [
   {
-    "course_id": 1,
+    "question": "What is KodeBuddy AI?",
+    "answer": "KodeBuddy AI is KodeCamp's AI learning assistant. It answers curriculum questions, helps you work through assignments without giving away the solution, and connects you with a trainer when it isn't confident it can help."
+  },
+  {
+    "question": "How do I submit an assignment?",
+    "answer": "Open the assignment from your course dashboard and follow the submission instructions listed there. If you don't see a submission option, check with your trainer — submission methods can vary by course."
+  },
+  {
     "question": "What is Python?",
     "answer": "Python is a high-level, general-purpose programming language. It is known for its readability and simplicity."
   },
   {
-    "course_id": 1,
     "question": "How do I define a function in Python?",
     "answer": "You define a function in Python using the 'def' keyword followed by the function name and parentheses, for example: def my_function():"
   }

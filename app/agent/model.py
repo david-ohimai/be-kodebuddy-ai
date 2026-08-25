@@ -3,8 +3,7 @@ from typing import List, Optional
 from sqlmodel import SQLModel, Field, Column, JSON
 from pgvector.sqlalchemy import Vector
 from app.agent.graph.state import EscalationReason
-
-# Resolve circular dependency and ensure SQLAlchemy knows about related tables
+from sqlalchemy import Enum as SAEnum
 from app.features.auth.model import User  # noqa: F401
 from app.features.courses.model import Course  # noqa: F401
 from app.features.modules.model import Module  # noqa: F401
@@ -39,7 +38,16 @@ class Escalation(SQLModel, table=True):
         nullable=True,
     )
     question: str = Field(nullable=False)
-    reason: EscalationReason = Field(nullable=False)
+    reason: EscalationReason = Field(
+        sa_column=Column(
+            SAEnum(
+                EscalationReason,
+                name="escalationreason",
+                values_callable=lambda enum_cls: [member.value for member in enum_cls],
+            ),
+            nullable=False,
+        )
+    )
     detail: Optional[str] = Field(default=None, nullable=True)
     status: str = Field(default="pending", max_length=50, index=True)
     created_at: datetime = Field(

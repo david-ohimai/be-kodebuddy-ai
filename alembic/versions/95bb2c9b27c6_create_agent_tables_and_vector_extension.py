@@ -44,7 +44,7 @@ def upgrade() -> None:
     sa.Column('course_id', sa.Integer(), nullable=False),
     sa.Column('trainer_id', sa.Integer(), nullable=True),
     sa.Column('question', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('reason', sa.Enum('NO_RELEVANT_CONTEXT', 'LOW_RETRIEVAL_CONFIDENCE', 'MODEL_UNCERTAINTY', 'POLICY_VIOLATION', 'PARSER_FAILURE', 'EXPLICIT_USER_REQUEST', name='escalationreason'), nullable=False),
+    sa.Column('reason', sa.Enum('no_relevant_context', 'low_retrieval_confidence', 'model_uncertainty', 'policy_violation', 'parser_failure', 'explicit_user_request', name='escalationreason'), nullable=False),
     sa.Column('detail', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('status', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),

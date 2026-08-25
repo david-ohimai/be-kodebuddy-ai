@@ -77,3 +77,25 @@ class EmbeddingsClient:
             input_type=input_type,
         )
         return result.embeddings
+
+_client: "EmbeddingsClient | None" = None
+
+
+def _get_client() -> "EmbeddingsClient":
+    """Reuse one client across calls instead of re-initializing Voyage
+    (and re-reading the mock-mode check) on every single query."""
+    global _client
+    if _client is None:
+        _client = EmbeddingsClient()
+    return _client
+
+
+def embed_query(text: str) -> List[float]:
+    """
+    Embed a single search query.
+
+    input_type="query" matters: Voyage AI embeds queries and documents
+    slightly differently to improve retrieval quality, and everything
+    ingested via ingest_curriculum.py used input_type="document".
+    """
+    return _get_client().embed_text(text, input_type="query")

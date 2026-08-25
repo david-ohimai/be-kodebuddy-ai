@@ -148,13 +148,13 @@ def main():
                     question = faq.get("question")
                     answer = faq.get("answer")
 
-                    if not course_id or not question or not answer:
+                    if not question or not answer:
                         print(f"Warning: Invalid FAQ entry {faq}. Skipping.")
                         continue
 
                     full_text = f"Frequently Asked Question: {question}\nAnswer: {answer}"
                     chunks = chunk_text(full_text)
-
+                    scope = f"course {course_id}" if course_id else "global"
                     print(
                         f"Processing FAQ '{question}' ({len(chunks)} chunks)..."
                     )
