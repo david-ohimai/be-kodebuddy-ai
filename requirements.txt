@@ -20,4 +20,6 @@ langgraph
 # LLM client will decide what the request path uses.
 anthropic
 langsmith
-pytest
+pgvector
+voyageai
+langchain-text-splitters

@@ -32,10 +32,12 @@ needs to change.
         chunk_text    text not null
         embedding     vector(N) not null
 
-    NOTE FOR DEV A: `course_id` must be NULLABLE. The MVP FAQ set is entirely
-    global — all 15 questions are platform-level ("What is KodeBuddy AI?",
-    "How do I submit an assignment?") and none belong to a course. Ingest them
-    with course_id NULL, module_id NULL, content_type 'faq'.
+    DECIDED: FAQs are global (Option A, resolved 2026-08-25). `course_id` is
+    nullable on this table as of migration f3a9c1d84b2e. A FAQ chunk with
+    course_id NULL is visible to every enrolled learner; a FAQ chunk with a
+    real course_id is scoped to that course only, same as curriculum content.
+    Curriculum and resource rows should always carry a real course_id —
+    that's enforced in scripts/ingest_curriculum.py, not the database schema.
 
     Global rows are readable by any authenticated learner, so the search query
     permits a NULL course_id ONLY for content_type 'faq'. A NULL course_id on
@@ -86,7 +88,7 @@ logger = logging.getLogger(__name__)
 
 # --- Dev A's schema contract (see module docstring) ------------------------
 EMBEDDINGS_TABLE = "content_embeddings"
-EMBEDDINGS_TEXT_COLUMN = "chunk_text"
+EMBEDDINGS_TEXT_COLUMN = "text"
 EMBEDDINGS_VECTOR_COLUMN = "embedding"
 ESCALATIONS_TABLE = "escalations"
 
