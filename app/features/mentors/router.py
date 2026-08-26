@@ -11,6 +11,7 @@ from app.features.submissions.schema import SubmissionResponse
 from .repository import MentorRepository
 from .schema import AssignedLearnerSummary, AssignLearnerToMentor, MentorLearnerResponse
 from .service import MentorService
+from .schema import CheckInCreate, CheckInResponse, CheckInUpdate
 
 
 router = APIRouter(
@@ -97,3 +98,51 @@ def get_assigned_learner_submissions(
     service: MentorService = Depends(get_mentor_service),
 ):
     return service.get_learner_submissions(current_mentor, learner_id)
+
+
+@router.post(
+    "/check-ins",
+    response_model=CheckInResponse,
+)
+def create_check_in(
+    data: CheckInCreate,
+    current_mentor: User = Depends(get_current_mentor),
+    service: MentorService = Depends(get_mentor_service),
+):
+    return service.create_check_in(current_mentor, data)
+
+
+@router.get(
+    "/check-ins",
+    response_model=list[CheckInResponse],
+)
+def get_my_check_ins(
+    current_mentor: User = Depends(get_current_mentor),
+    service: MentorService = Depends(get_mentor_service),
+):
+    return service.get_my_check_ins(current_mentor)
+
+
+@router.get(
+    "/learners/{learner_id}/check-ins",
+    response_model=list[CheckInResponse],
+)
+def get_learner_check_ins(
+    learner_id: int,
+    current_mentor: User = Depends(get_current_mentor),
+    service: MentorService = Depends(get_mentor_service),
+):
+    return service.get_check_ins_for_learner(current_mentor, learner_id)
+
+
+@router.patch(
+    "/check-ins/{check_in_id}",
+    response_model=CheckInResponse,
+)
+def update_check_in(
+    check_in_id: int,
+    data: CheckInUpdate,
+    current_mentor: User = Depends(get_current_mentor),
+    service: MentorService = Depends(get_mentor_service),
+):
+    return service.update_check_in(current_mentor, check_in_id, data)
