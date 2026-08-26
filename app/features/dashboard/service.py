@@ -7,6 +7,7 @@ from app.features.dashboard.schema import (
     LearnerCourseProgress,
     LearnerDashboardResponse,
     MentorDashboardResponse,
+    MentorLearnerProgress,
     TrainerCourseSummary,
     TrainerDashboardResponse,
 )
@@ -292,10 +293,9 @@ class DashboardService:
             pending_grades=total_pending_grades,
         )
 
-    # ============================================================
-    # MENTOR DASHBOARD
-    # ============================================================
 
+    # ---------- MENTOR DASHBOARD ----------
+    
     def get_mentor_dashboard(
         self,
         mentor_id: int,
@@ -307,11 +307,7 @@ class DashboardService:
             )
         )
 
-        # The Mentor -> Learner relationship is being
-        # implemented separately. Once that model is available,
-        # the repository method above will provide the assigned
-        # learners and this method can calculate their progress.
-
+      
         learner_progress = []
 
         for learner in learners:
@@ -382,18 +378,17 @@ class DashboardService:
             )
 
             learner_progress.append(
-                {
-                    "learner_id": learner.id,
-                    "learner_name": learner.full_name
-                    or learner.email,
-                    "total_courses": len(courses),
-                    "total_lessons": total_lessons,
-                    "completed_lessons": completed_lessons,
-                    "completion_percentage": round(
+                MentorLearnerProgress(
+                    learner_id=learner.id,
+                    learner_name=learner.full_name or learner.email,
+                    total_courses=len(courses),
+                    total_lessons=total_lessons,
+                    completed_lessons=completed_lessons,
+                    completion_percentage=round(
                         percentage,
                         2,
                     ),
-                }
+                )
             )
 
         return MentorDashboardResponse(
