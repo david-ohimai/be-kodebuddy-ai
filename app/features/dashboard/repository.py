@@ -9,7 +9,7 @@ from app.features.lessons.model import Lesson
 from app.features.assignments.model import Assignment
 from app.features.submissions.model import Submission
 from app.features.progress.model import UserProgress
-from app.features.mentors.model import MentorLearner
+from app.features.mentors.model import MentorLearner, MentorCheckIn
 
 
 class DashboardRepository:
@@ -298,6 +298,17 @@ class DashboardRepository:
                 User.role == UserRole.LEARNER,
                 User.is_active == True,
             )
+        )
+
+        return list(self.session.exec(statement))
+
+    def get_mentor_check_ins(
+        self,
+        mentor_id: int,
+    ) -> list[MentorCheckIn]:
+
+        statement = select(MentorCheckIn).where(
+            MentorCheckIn.mentor_id == mentor_id
         )
 
         return list(self.session.exec(statement))

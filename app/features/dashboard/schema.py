@@ -56,6 +56,13 @@ class TrainerDashboardResponse(BaseModel):
 
 # ---------- MENTOR DASHBOARD ----------
 
+class MentorCheckInSummary(BaseModel):
+    id: int
+    scheduled_time: datetime
+    status: str
+    notes: str | None
+
+
 class MentorLearnerProgress(BaseModel):
     learner_id: int
     learner_name: str
@@ -63,10 +70,14 @@ class MentorLearnerProgress(BaseModel):
     total_lessons: int
     completed_lessons: int
     completion_percentage: float
+    check_ins: list[MentorCheckInSummary]
 
 
 class MentorDashboardResponse(BaseModel):
     total_learners: int
+    total_check_ins: int
+    upcoming_check_ins: int
+    completed_check_ins: int
     learners: list[MentorLearnerProgress]
 
 

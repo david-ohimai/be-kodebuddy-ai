@@ -6,6 +6,7 @@ from app.features.dashboard.schema import (
     LearnerAssignmentStatus,
     LearnerCourseProgress,
     LearnerDashboardResponse,
+    MentorCheckInSummary,
     MentorDashboardResponse,
     MentorLearnerProgress,
     TrainerCourseSummary,
@@ -307,7 +308,26 @@ class DashboardService:
             )
         )
 
-      
+        check_ins = (
+            self.repository.get_mentor_check_ins(
+                mentor_id
+            )
+        )
+
+        total_check_ins = len(check_ins)
+        upcoming_check_ins = sum(
+            1
+            for check_in in check_ins
+            if check_in.status.value == "upcoming"
+        )
+
+        completed_check_ins = sum(
+            1
+            for check_in in check_ins
+            if check_in.status.value == "completed"
+        )
+
+
         learner_progress = []
 
         for learner in learners:
@@ -377,6 +397,24 @@ class DashboardService:
                 else 0
             )
 
+            learner_check_ins = [
+                check_in
+                for check_in in check_ins
+                if check_in.learner_id == learner.id
+            ]
+
+            check_in_summaries = [
+                MentorCheckInSummary(
+                    id=check_in.id,
+                    scheduled_time=check_in.scheduled_time,
+                    status=check_in.status.value,
+                    notes=check_in.notes,
+                )
+                for check_in in learner_check_ins
+                if check_in.id is not None
+            ]
+
+
             learner_progress.append(
                 MentorLearnerProgress(
                     learner_id=learner.id,
@@ -388,10 +426,14 @@ class DashboardService:
                         percentage,
                         2,
                     ),
+                    check_ins=check_in_summaries,
                 )
             )
 
         return MentorDashboardResponse(
             total_learners=len(learners),
+            total_check_ins=total_check_ins,
+            upcoming_check_ins=upcoming_check_ins,
+            completed_check_ins=completed_check_ins,
             learners=learner_progress,
         )
