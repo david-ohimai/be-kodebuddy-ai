@@ -10,3 +10,4 @@ kodebuddy-ai-be.env
 .coverage
 .DS_Store
 tmp/
+*.db

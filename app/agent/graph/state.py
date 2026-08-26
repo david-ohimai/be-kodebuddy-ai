@@ -36,6 +36,13 @@ class EscalationReason(str, Enum):
     MODEL_UNCERTAINTY = "model_uncertainty"
     POLICY_VIOLATION = "policy_violation"
     PARSER_FAILURE = "parser_failure"
+    # The retrieval pipeline itself failed (embedding provider down, content
+    # store missing) rather than legitimately finding nothing. Kept distinct
+    # from NO_RELEVANT_CONTEXT: repeated rows in that category likely mean a
+    # curriculum content gap; repeated rows here mean the retrieval
+    # infrastructure is broken and every learner in the window was affected
+    # - those need different alerting.
+    RETRIEVAL_UNAVAILABLE = "retrieval_unavailable"
     # Reserved for a future "talk to a human" intent-detection feature.
     # Not yet triggered anywhere in this graph.
     EXPLICIT_USER_REQUEST = "explicit_user_request"
@@ -140,6 +147,11 @@ class AgentState(TypedDict, total=False):
     retrieved_chunks: list[RetrievedChunk]
     # only populated for ASSIGNMENT_GUIDANCE
     assignment_brief: AssignmentBrief | None
+    # True if `retrieve` caught an AgentRetrievalError (Dev B's tools raise
+    # this when the retrieval pipeline itself is broken, not when it
+    # legitimately finds nothing). Read by the conditional edge after
+    # `retrieve` to route straight to `retrieval_error` — see build.py.
+    retrieval_failed: bool
 
     # --- reason node output (also set directly by `no_context`) ---
     draft_response: str
