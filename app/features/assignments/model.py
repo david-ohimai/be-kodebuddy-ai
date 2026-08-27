@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, DateTime
 from sqlmodel import Field, SQLModel
 
 
@@ -25,6 +25,7 @@ class Assignment(SQLModel, table=True):
 
     description: str | None = None
 
+
     instructions: list[dict[str, Any]] | None = Field(
         default=None,
         sa_column=Column(JSON),
@@ -35,7 +36,9 @@ class Assignment(SQLModel, table=True):
         sa_column=Column(JSON),
     )
 
-    due_date: datetime
+    due_date: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
 
     maximum_score: float = Field(
         gt=0,
@@ -48,10 +51,12 @@ class Assignment(SQLModel, table=True):
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
     )
 
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
     )
 
     is_active: bool = True

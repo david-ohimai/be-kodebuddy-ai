@@ -89,12 +89,12 @@ class ProfileService:
 
         updated_user = self.repository.update(user)
 
-        if old_role != new_role:
-            await send_role_change_email(
-                email=updated_user.email,
-                full_name=updated_user.full_name,
-                new_role=updated_user.role.value,
-            )
+        # if old_role != new_role:
+        #     await send_role_change_email(
+        #         email=updated_user.email,
+        #         full_name=updated_user.full_name,
+        #         new_role=updated_user.role.value,
+        #     )
 
         return UserResponse(
             message="User role updated successfully",
