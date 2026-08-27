@@ -26,6 +26,7 @@ from app.features.assignments.model import Assignment
 from app.features.resources.model import Resource, ResourceType
 from app.features.submissions.model import Submission
 from app.features.mentors.model import MentorLearner
+from app.features.activity.model import UserActivity
 
 from app.agent.model import ContentEmbedding, Escalation, ConversationHistory, QueryLog
 
