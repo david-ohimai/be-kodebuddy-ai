@@ -1,7 +1,12 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+
+class AssignmentItem(BaseModel):
+    title: str
+    description: str
 
 class AssignmentCreate(BaseModel):
 
@@ -11,6 +16,10 @@ class AssignmentCreate(BaseModel):
     )
 
     description: str | None = None
+
+    instructions: list[AssignmentItem] | None = None
+
+    requirements: list[AssignmentItem] | None = None
 
     due_date: datetime
 
@@ -28,6 +37,10 @@ class AssignmentUpdate(BaseModel):
 
     description: str | None = None
 
+    instructions: list[AssignmentItem] | None = None
+
+    requirements: list[AssignmentItem] | None = None
+
     due_date: datetime | None = None
 
     maximum_score: float | None = Field(
@@ -43,6 +56,8 @@ class AssignmentResponse(BaseModel):
     module_id: int
     title: str
     description: str | None
+    instructions: list[AssignmentItem] | None
+    requirements: list[AssignmentItem] | None
     due_date: datetime
     maximum_score: float
     created_by: int

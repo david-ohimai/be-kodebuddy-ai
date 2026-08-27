@@ -12,6 +12,9 @@ from app.features.resources.router import router as resource_router
 from app.features.assignments.router import router as assignment_router
 from app.features.submissions.router import router as submission_router
 from app.features.progress.router import router as progress_router
+from app.features.mentors.router import router as mentor_router
+from app.features.dashboard.router import router as dashboard_router
+
 
 
 app = FastAPI(
@@ -43,7 +46,8 @@ app.include_router(resource_router)
 app.include_router(assignment_router)
 app.include_router(submission_router)
 app.include_router(progress_router)
-
+app.include_router(mentor_router)
+app.include_router(dashboard_router)
 
 @app.get("/")
 def home():

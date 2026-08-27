@@ -11,3 +11,7 @@ python-jose[cryptography]
 fastapi-mail
 alembic
 langgraph
+pgvector
+voyageai
+langchain-text-splitters
+anthropic

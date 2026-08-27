@@ -3,9 +3,11 @@ venv/
 __pycache__/
 *.pyc
 .env
+kodebuddy-ai-be.env
 .vscode/
 *.py[cod]
 .mypy_cache
 .coverage
 .DS_Store
 tmp/
+*.db
