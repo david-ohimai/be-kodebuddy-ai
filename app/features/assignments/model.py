@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
+from typing import Any
 
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
+
 
 
 class Assignment(SQLModel, table=True):
@@ -21,6 +24,16 @@ class Assignment(SQLModel, table=True):
     )
 
     description: str | None = None
+
+    instructions: list[dict[str, Any]] | None = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
+
+    requirements: list[dict[str, Any]] | None = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
 
     due_date: datetime
 
