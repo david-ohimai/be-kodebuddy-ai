@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import FRONTEND_URL
 from app.features.auth.router import router as user_router
+from app.features.auth.invitation.router import router as invitation_router
 from app.features.profile.router import router as profile_router
 from app.features.cohorts.router.router import router as cohorts_router
 from app.features.cohorts.router.assign_cohort_router import router as assign_cohorts_router
@@ -36,6 +37,7 @@ app.add_middleware(
 
 
 app.include_router(user_router)
+app.include_router(invitation_router)
 app.include_router(profile_router)
 app.include_router(cohorts_router)
 app.include_router(assign_cohorts_router)

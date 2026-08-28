@@ -9,6 +9,7 @@ from sqlmodel import SQLModel
 from app.core.config import DATABASE_URL
 
 from app.features.auth.model import User
+from app.features.auth.invitation.model import UserInvitation
 
 from app.features.cohorts.models.model import Cohort
 from app.features.cohorts.models.cohort_learners import (
