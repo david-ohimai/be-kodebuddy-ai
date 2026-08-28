@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from sqlalchemy import Column, DateTime
 from sqlmodel import SQLModel, Field
 from sqlalchemy import UniqueConstraint
 
@@ -25,11 +26,13 @@ class Course(SQLModel, table=True):
     is_active: bool = Field(default=True)
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
     )
 
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
     )
 
 
