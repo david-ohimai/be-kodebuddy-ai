@@ -4,7 +4,6 @@ from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from app.features.activity.model import ActivityType
-from app.features.activity.repository import ActivityRepository
 from app.features.activity.service import ActivityService
 
 from app.features.auth.model import User
@@ -24,9 +23,10 @@ from .schema import (
 
 
 class ProgressService:
-    def __init__(self, repository: ProgressRepository, session: Session):
+    def __init__(self, repository: ProgressRepository, session: Session, activity_service: ActivityService):
         self.repository = repository
         self.session = session
+        self.activity_service = activity_service
 
     def toggle_lesson_completion(
         self,

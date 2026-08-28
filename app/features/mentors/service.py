@@ -2,12 +2,10 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.features.auth.model import User, UserRole
-from app.features.progress.repository import ProgressRepository
 from app.features.progress.service import ProgressService
 from app.features.submissions.model import Submission
 
 from .repository import MentorRepository
-from .schema import AssignedLearnerSummary
 from app.features.activity.model import ActivityType
 from app.features.activity.repository import ActivityRepository
 from app.features.activity.service import ActivityService
@@ -15,7 +13,7 @@ from app.features.activity.service import ActivityService
 from datetime import datetime, timezone
 
 from .model import MentorLearner, MentorCheckIn, CheckInStatus
-from .schema import CheckInCreate, CheckInUpdate
+from .schema import AssignedLearnerSummary, CheckInCreate, CheckInUpdate
 
 def verify_mentor_learner_access(
     session: Session,
@@ -39,7 +37,8 @@ class MentorService:
     def __init__(self, repository: MentorRepository, session: Session):
         self.repository = repository
         self.session = session
-        self.activity_service = ActivityService(ActivityRepository(session))
+        activity_repository = ActivityRepository(session)
+        self.activity_service = ActivityService(activity_repository)
 
     def assign_learner(
         self,
@@ -168,9 +167,9 @@ class MentorService:
 
         if updated.status == CheckInStatus.COMPLETED and not was_already_completed:
             self.activity_service.record(
-                user_id=mentor.id,
+                user_id=updated.learner_id,
                 activity_type=ActivityType.CHECK_IN_COMPLETED,
-                title=f"Completed check-in with learner #{updated.learner_id}",
+                title=f"Check-in completed with mentor #{mentor.id}",
             )
 
         return updated
