@@ -40,6 +40,7 @@ from app.agent.graph.nodes import (
     make_confidence_gate_node,
     make_no_context_node,
     make_reason_node,
+    make_retrieval_error_node,
     make_retrieve_node,
     make_route_node,
 )
@@ -83,11 +84,17 @@ def traced_dependencies(deps: AgentDependencies) -> AgentDependencies:
     )
 
 
-def _has_usable_context(state: AgentState) -> str:
-    """Duplicated from graph/build.py rather than imported, since that
-    function is private (`_`-prefixed) there — this keeps this module from
-    depending on an implementation detail Dev C hasn't committed to keeping
-    stable."""
+def _route_after_retrieve(state: AgentState) -> str:
+    """Kept in sync with graph/build.py's `_route_after_retrieve` (that one
+    stays private/`_`-prefixed there, so this module keeps its own copy
+    rather than importing an implementation detail Dev C hasn't committed
+    to keeping stable) — but it MUST implement the same three-way branch,
+    including the `retrieval_failed` check, or a genuine retrieval
+    infrastructure outage silently gets traced as a plain "no context"
+    escalation instead of the distinct `retrieval_error` case."""
+    if state.get("retrieval_failed"):
+        return "retrieval_error"
+
     has_chunks = bool(state.get("retrieved_chunks"))
     has_brief = (
         state.get("query_type") == QueryType.ASSIGNMENT_GUIDANCE
@@ -100,8 +107,9 @@ def build_traced_agent_graph(deps: AgentDependencies):
     """
     Same wiring as `build_agent_graph` (graph/build.py), but every node is
     wrapped in `@traceable` so a LangSmith trace shows each graph step
-    (retrieve / reason / confidence_gate / no_context / route) as its own
-    span, nested under the run for the overall graph.invoke() call.
+    (retrieve / reason / confidence_gate / no_context / retrieval_error /
+    route) as its own span, nested under the run for the overall
+    graph.invoke() call.
 
     `deps` is also passed through `traced_dependencies` first, so tool/LLM
     calls nest correctly under their calling node in the trace tree.
@@ -131,6 +139,12 @@ def build_traced_agent_graph(deps: AgentDependencies):
         _traced("agent.graph.no_context", "chain")(make_no_context_node()),
     )
     graph.add_node(
+        "retrieval_error",
+        _traced("agent.graph.retrieval_error", "chain")(
+            make_retrieval_error_node()
+        ),
+    )
+    graph.add_node(
         "route",
         _traced("agent.graph.route", "chain")(make_route_node(traced_deps)),
     )
@@ -138,12 +152,17 @@ def build_traced_agent_graph(deps: AgentDependencies):
     graph.set_entry_point("retrieve")
     graph.add_conditional_edges(
         "retrieve",
-        _has_usable_context,
-        {"reason": "reason", "no_context": "no_context"},
+        _route_after_retrieve,
+        {
+            "reason": "reason",
+            "no_context": "no_context",
+            "retrieval_error": "retrieval_error",
+        },
     )
     graph.add_edge("reason", "confidence_gate")
     graph.add_edge("confidence_gate", "route")
     graph.add_edge("no_context", "route")
+    graph.add_edge("retrieval_error", "route")
     graph.add_edge("route", END)
 
     return graph.compile()

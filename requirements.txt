@@ -11,7 +11,9 @@ python-jose[cryptography]
 fastapi-mail
 alembic
 langgraph
-
+openai
+google-genai
+groq
 # --- agent retrieval & tools (Dev B) ---
 # Also needs the pgvector *extension* on the database (CREATE EXTENSION
 # vector) -- that is Dev A's migration, not a pip package. No Python pgvector

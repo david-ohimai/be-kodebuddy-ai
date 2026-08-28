@@ -25,7 +25,6 @@ from app.features.progress.model import UserProgress
 from app.features.assignments.model import Assignment
 from app.features.resources.model import Resource, ResourceType
 from app.features.submissions.model import Submission
-from app.features.agent.model import ConversationHistory, QueryLog
 from app.features.mentors.model import MentorLearner
 
 from app.agent.model import ContentEmbedding, Escalation, ConversationHistory, QueryLog

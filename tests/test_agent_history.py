@@ -10,13 +10,13 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.agent.graph.state import EscalationReason, QueryType
-from app.features.agent.model import ChatRole, ConversationHistory, QueryLog
-from app.features.agent.repository import (
+from app.agent.graph.state import ChatRole, EscalationReason, QueryType
+from app.agent.model import ConversationHistory, QueryLog
+from app.agent.repository import (
     ConversationHistoryRepository,
     QueryLogRepository,
 )
-from app.features.agent.service import load_chat_history, record_interaction
+from app.agent.service import load_chat_history, record_interaction
 
 
 @pytest.fixture()
@@ -114,7 +114,10 @@ def test_record_interaction_writes_history_and_query_log(session):
         "final_response": "It repeats a block of code.",
         "query_type": QueryType.CHAT,
         "assignment_id": None,
-        "retrieved_chunks": [{"score": 0.91}, {"score": 0.4}],
+        "retrieved_chunks": [
+            {"chunk_id": "c1", "score": 0.91},
+            {"chunk_id": "c2", "score": 0.4},
+        ],
         "confidence_score": 0.91,
         "is_confident": True,
         "escalated": False,
@@ -123,7 +126,12 @@ def test_record_interaction_writes_history_and_query_log(session):
         "escalation_id": None,
     }
     record_interaction(
-        session, learner_id=1, course_id=101, module_id=1001, state=state
+        session,
+        learner_id=1,
+        course_id=101,
+        module_id=1001,
+        state=state,
+        latency_ms=250,
     )
 
     history_repo = ConversationHistoryRepository(session, learner_id=1)
@@ -135,6 +143,8 @@ def test_record_interaction_writes_history_and_query_log(session):
     assert log.escalated is False
     assert log.top_retrieval_score == 0.91
     assert log.query_type == QueryType.CHAT.value
+    assert log.retrieved_chunk_ids == ["c1", "c2"]
+    assert log.latency_ms == 250
 
 
 def test_record_interaction_stores_escalation_reason_as_string(session):
@@ -152,7 +162,12 @@ def test_record_interaction_stores_escalation_reason_as_string(session):
         "escalation_id": 7,
     }
     record_interaction(
-        session, learner_id=1, course_id=101, module_id=None, state=state
+        session,
+        learner_id=1,
+        course_id=101,
+        module_id=None,
+        state=state,
+        latency_ms=90,
     )
 
     log = session.exec(select(QueryLog)).first()
@@ -169,6 +184,7 @@ def test_query_log_repository_record_persists_row(session):
         assignment_id=None,
         query_type=QueryType.CHAT.value,
         question="q",
+        retrieved_chunk_ids=["c1"],
         top_retrieval_score=0.7,
         confidence_score=0.7,
         is_confident=True,
@@ -176,5 +192,8 @@ def test_query_log_repository_record_persists_row(session):
         escalation_reason=None,
         escalation_detail=None,
         escalation_id=None,
+        latency_ms=110,
     )
     assert log.id is not None
+    assert log.retrieved_chunk_ids == ["c1"]
+    assert log.latency_ms == 110
