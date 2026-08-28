@@ -1,7 +1,7 @@
 """create user activities table
 
 Revision ID: 755b676f1992
-Revises: b7d3e9f1a2c4
+Revises: babff2f0f73c
 Create Date: 2026-08-27 02:01:07.148991
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '755b676f1992'
-down_revision: Union[str, Sequence[str], None] = 'b7d3e9f1a2c4'
+down_revision: Union[str, Sequence[str], None] = 'babff2f0f73c'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
