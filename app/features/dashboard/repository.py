@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from sqlmodel import Session, select
 
 from app.features.auth.model import User, UserRole
@@ -64,6 +62,60 @@ class DashboardRepository:
             Cohort.is_open == True
         )
         return len(list(self.session.exec(statement)))
+
+    def get_cohort_breakdown(self) -> list[dict]:
+       cohorts = list(
+           self.session.exec(
+               select(Cohort)
+           )
+       )
+   
+       breakdown = []
+   
+       for cohort in cohorts:
+           if cohort.id is None:
+               continue
+   
+           learner_statement = (
+               select(CourseLearner.learner_id)
+               .join(
+                   Course,
+                   Course.id == CourseLearner.course_id,
+               )
+               .where(
+                   Course.cohort_id == cohort.id,
+                   Course.is_active == True,
+               )
+               .distinct()
+           )
+   
+           learner_ids = list(
+               self.session.exec(learner_statement)
+           )
+   
+           course_statement = (
+               select(Course.id)
+               .where(
+                   Course.cohort_id == cohort.id,
+                   Course.is_active == True,
+               )
+           )
+   
+           course_ids = list(
+               self.session.exec(course_statement)
+           )
+   
+           breakdown.append(
+               {
+                   "cohort_id": cohort.id,
+                   "cohort_name": cohort.name,
+                   "learner_count": len(learner_ids),
+                   "course_count": len(course_ids),
+                   "active": cohort.is_open,
+               }
+           )
+   
+       return breakdown
 
     # ---------- COURSE STATISTICS ----------
     def get_total_courses(self) -> int:
@@ -281,9 +333,6 @@ class DashboardRepository:
         self,
         mentor_id: int,
     ) -> list[User]:
-        """
-        Get a list of learners assigned to a specific mentor.
-        """
 
         statement = (
             select(User)

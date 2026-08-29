@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.features.dashboard.repository import DashboardRepository
 from app.features.dashboard.schema import (
+    AdminCohortBreakdown,
     AdminDashboardResponse,
     DashboardActivity,
     LearnerAssignmentStatus,
@@ -46,7 +47,11 @@ class DashboardService:
 
         activities = self.repository.get_admin_activities(
                 limit=20
-            )    
+            )
+
+        cohort_breakdown = (
+        self.repository.get_cohort_breakdown()
+        )    
 
         return AdminDashboardResponse(
             total_users=self.repository.get_total_users(),
@@ -62,6 +67,10 @@ class DashboardService:
             total_submissions=self.repository.get_total_submissions(),
             pending_grades=self.repository.get_pending_grades(),
             activities=self._format_activities(activities),
+            cohort_breakdown=[
+                AdminCohortBreakdown(**item)
+                for item in cohort_breakdown
+            ],
         )
 
 

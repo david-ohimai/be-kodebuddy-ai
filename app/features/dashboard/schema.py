@@ -2,6 +2,15 @@ from pydantic import BaseModel
 from datetime import datetime
 from app.features.activity.model import ActivityType
 
+# ---------- COHORT BREAKDOWN ----------
+
+class AdminCohortBreakdown(BaseModel):
+    cohort_id: int
+    cohort_name: str
+    learner_count: int
+    course_count: int
+    active: bool
+
 # ---------- ACTIVITY ----------
 
 class DashboardActivity(BaseModel):
@@ -110,3 +119,4 @@ class AdminDashboardResponse(BaseModel):
     total_submissions: int
     pending_grades: int
     activities: list[DashboardActivity]
+    cohort_breakdown: list[AdminCohortBreakdown]
