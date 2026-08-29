@@ -1,5 +1,15 @@
 from pydantic import BaseModel
 from datetime import datetime
+from app.features.activity.model import ActivityType
+
+# ---------- ACTIVITY ----------
+
+class DashboardActivity(BaseModel):
+    id: int
+    activity_type: ActivityType
+    title: str
+    description: str | None
+    created_at: datetime
 
 # ---------- LEARNER DASHBOARD ----------
 
@@ -30,6 +40,7 @@ class LearnerDashboardResponse(BaseModel):
     overall_completion_percentage: float
     courses: list[LearnerCourseProgress]
     assignments: list[LearnerAssignmentStatus]
+    activities: list[DashboardActivity]
 
 
 # ---------- TRAINER DASHBOARD ----------
@@ -52,6 +63,7 @@ class TrainerDashboardResponse(BaseModel):
     total_submissions: int
     pending_grades: int
     courses: list[TrainerCourseSummary]
+    activities: list[DashboardActivity]
 
 
 # ---------- MENTOR DASHBOARD ----------
@@ -79,6 +91,7 @@ class MentorDashboardResponse(BaseModel):
     upcoming_check_ins: int
     completed_check_ins: int
     learners: list[MentorLearnerProgress]
+    activities: list[DashboardActivity]
 
 
 # ---------- ADMIN DASHBOARD ----------
@@ -96,3 +109,4 @@ class AdminDashboardResponse(BaseModel):
     active_courses: int
     total_submissions: int
     pending_grades: int
+    activities: list[DashboardActivity]

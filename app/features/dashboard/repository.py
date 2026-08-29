@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.features.auth.model import User, UserRole
+from app.features.activity.model import UserActivity
+from app.features.cohorts.models.model import Cohort
 from app.features.courses.model import Course, CourseTrainer, CourseLearner
 from app.features.modules.model import Module
 from app.features.lessons.model import Lesson
@@ -54,14 +56,10 @@ class DashboardRepository:
 
     # ---------- COHORT STATISTICS ----------
     def get_total_cohorts(self) -> int:
-        from app.features.cohorts.models.model import Cohort
-
         statement = select(Cohort)
         return len(list(self.session.exec(statement)))
 
     def get_active_cohorts(self) -> int:
-        from app.features.cohorts.models.model import Cohort
-
         statement = select(Cohort).where(
             Cohort.is_open == True
         )
@@ -312,3 +310,96 @@ class DashboardRepository:
         )
 
         return list(self.session.exec(statement))
+
+    # ---------- ACTIVITY ----------
+    def get_learner_activities(
+        self,
+        learner_id: int,
+        limit: int = 20,
+    ) -> list[UserActivity]:
+
+        statement = (
+            select(UserActivity)
+            .where(
+                UserActivity.user_id == learner_id
+            )
+            .order_by(
+                UserActivity.created_at.desc()
+            )
+            .limit(limit)
+        )
+
+        return list(
+            self.session.exec(statement)
+        )
+
+    def get_trainer_activities(
+        self,
+        trainer_id: int,
+        limit: int = 20,
+    ) -> list[UserActivity]:
+
+        statement = (
+            select(UserActivity)
+            .join(
+                CourseLearner,
+                CourseLearner.learner_id == UserActivity.user_id,
+            )
+            .join(
+                CourseTrainer,
+                CourseTrainer.course_id == CourseLearner.course_id,
+            )
+            .where(
+                CourseTrainer.trainer_id == trainer_id,
+            )
+            .order_by(
+                UserActivity.created_at.desc()
+            )
+            .limit(limit)
+        )
+
+        return list(
+            self.session.exec(statement)
+        )
+
+    def get_mentor_activities(
+        self,
+        mentor_id: int,
+        limit: int = 20,
+    ) -> list[UserActivity]:
+
+        statement = (
+            select(UserActivity)
+            .join(
+                MentorLearner,
+                MentorLearner.learner_id == UserActivity.user_id,
+            )
+            .where(
+                MentorLearner.mentor_id == mentor_id,
+            )
+            .order_by(
+                UserActivity.created_at.desc()
+            )
+            .limit(limit)
+        )
+
+        return list(
+            self.session.exec(statement)
+        )
+
+    def get_admin_activities(
+        self,
+        limit: int = 20,
+    ) -> list[UserActivity]:
+
+        statement = (
+            select(UserActivity)
+            .order_by(
+                UserActivity.created_at.desc()
+            )
+            .limit(limit)
+        )
+
+        return list(
+            self.session.exec(statement)
+        )
