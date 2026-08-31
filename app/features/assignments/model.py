@@ -36,6 +36,14 @@ class Assignment(SQLModel, table=True):
         sa_column=Column(JSON),
     )
 
+    # When the assignment opens to learners. NULL means "available as soon as
+    # it is created", which is how every assignment behaved before this column
+    # existed — so existing rows keep their current behaviour.
+    start_date: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+
     due_date: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )

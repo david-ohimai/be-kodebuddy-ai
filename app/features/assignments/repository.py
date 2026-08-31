@@ -7,6 +7,7 @@ from app.features.assignments.schema import (
     AssignmentCreate,
     AssignmentUpdate,
 )
+from app.features.auth.model import User
 
 
 class AssignmentRepository:
@@ -37,10 +38,17 @@ class AssignmentRepository:
     def get_all_assignment(
         self,
         module_id: int | None = None,
-    ) -> list[Assignment]:
+    ) -> list[tuple[Assignment, str | None]]:
+        """
+        Assignments plus the creating trainer's display name.
 
-        statement = select(Assignment).where(
-            Assignment.is_active == True
+        The name is joined here rather than fetched per row by the caller,
+        which would be an N+1 on the list endpoint.
+        """
+        statement = (
+            select(Assignment, User.full_name)
+            .join(User, User.id == Assignment.created_by)
+            .where(Assignment.is_active == True)  # noqa: E712
         )
 
         if module_id is not None:
@@ -48,21 +56,44 @@ class AssignmentRepository:
                 Assignment.module_id == module_id
             )
 
-        return list(self.db.exec(statement).all())
+        return [
+            (assignment, full_name)
+            for assignment, full_name in self.db.exec(statement).all()
+        ]
 
     def get_assignment_by_id(
         self,
         module_id: int,
         assignment_id: int,
-    ) -> Assignment | None:
-
-        statement = select(Assignment).where(
-            Assignment.id == assignment_id,
-            Assignment.module_id == module_id,
-            Assignment.is_active == True,
+    ) -> tuple[Assignment, str | None] | None:
+        """One assignment plus the creating trainer's display name."""
+        statement = (
+            select(Assignment, User.full_name)
+            .join(User, User.id == Assignment.created_by)
+            .where(
+                Assignment.id == assignment_id,
+                Assignment.module_id == module_id,
+                Assignment.is_active == True,  # noqa: E712
+            )
         )
 
-        return self.db.exec(statement).first()
+        row = self.db.exec(statement).first()
+
+        return (row[0], row[1]) if row is not None else None
+
+    def get_creator_name(
+        self,
+        user_id: int,
+    ) -> str | None:
+        """
+        Display name for a single user.
+
+        Used after a write, where only one assignment is in play and a join
+        would mean re-querying the row we already have.
+        """
+        return self.db.exec(
+            select(User.full_name).where(User.id == user_id)
+        ).first()
 
     def update(
         self,
