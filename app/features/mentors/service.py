@@ -2,18 +2,18 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.features.auth.model import User, UserRole
-from app.features.progress.repository import ProgressRepository
 from app.features.progress.service import ProgressService
 from app.features.submissions.model import Submission
 
-from .model import MentorLearner
 from .repository import MentorRepository
-from .schema import AssignedLearnerSummary, MentorLearnerResponse
+from app.features.activity.model import ActivityType
+from app.features.activity.repository import ActivityRepository
+from app.features.activity.service import ActivityService
 
 from datetime import datetime, timezone
 
-from .model import MentorCheckIn
-from .schema import CheckInCreate, CheckInUpdate
+from .model import MentorLearner, MentorCheckIn, CheckInStatus
+from .schema import AssignedLearnerSummary, CheckInCreate, CheckInUpdate
 
 def verify_mentor_learner_access(
     session: Session,
@@ -37,6 +37,8 @@ class MentorService:
     def __init__(self, repository: MentorRepository, session: Session):
         self.repository = repository
         self.session = session
+        activity_repository = ActivityRepository(session)
+        self.activity_service = ActivityService(activity_repository)
 
     def assign_learner(
         self,
@@ -152,6 +154,8 @@ class MentorService:
                 detail="This check-in does not belong to you",
             )
 
+        was_already_completed = check_in.status == CheckInStatus.COMPLETED
+
         update_data = data.model_dump(exclude_unset=True)
 
         for field, value in update_data.items():
@@ -159,4 +163,13 @@ class MentorService:
 
         check_in.updated_at = datetime.now(timezone.utc)
 
-        return self.repository.update_check_in(check_in)
+        updated = self.repository.update_check_in(check_in)
+
+        if updated.status == CheckInStatus.COMPLETED and not was_already_completed:
+            self.activity_service.record(
+                user_id=updated.learner_id,
+                activity_type=ActivityType.CHECK_IN_COMPLETED,
+                title=f"Check-in completed with mentor #{mentor.id}",
+            )
+
+        return updated
