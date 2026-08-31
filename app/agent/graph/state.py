@@ -57,11 +57,26 @@ class RetrievedChunk(TypedDict):
     """
 
     chunk_id: str
-    course_id: int
+    course_id: int | None
     module_id: int | None
     content_type: str  # "curriculum" | "faq" | "resource"
     text: str
     score: float
+
+
+class ChatRole(str, Enum):
+    """
+    DB-layer role for a stored conversation_history row (app/agent/model.py's
+    ConversationHistory.role). Deliberately a real enum there, unlike
+    ChatTurn.role below — the DB gets the stronger guarantee (only "user" or
+    "assistant" can ever be persisted), while the in-memory ChatTurn stays a
+    plain str so graph code isn't forced into an enum-vs-string conversion on
+    every read of `chat_history`. The service layer (load_chat_history /
+    record_interaction) is the one place that converts between the two.
+    """
+
+    USER = "user"
+    ASSISTANT = "assistant"
 
 
 class ChatTurn(TypedDict):
@@ -74,7 +89,7 @@ class ChatTurn(TypedDict):
     instead of raising a KeyError.
     """
 
-    role: str  # "user" | "assistant"
+    role: str  # "user" | "assistant" — see ChatRole's docstring for why
     message: str
 
 

@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
+from app.features.activity.model import ActivityType
+from app.features.activity.service import ActivityService
+
 from app.features.auth.model import User
 from app.features.lessons.model import Lesson
 from app.features.lessons.repository import LessonRepository
@@ -20,9 +23,10 @@ from .schema import (
 
 
 class ProgressService:
-    def __init__(self, repository: ProgressRepository, session: Session):
+    def __init__(self, repository: ProgressRepository, session: Session, activity_service: ActivityService):
         self.repository = repository
         self.session = session
+        self.activity_service = activity_service
 
     def toggle_lesson_completion(
         self,
@@ -70,6 +74,20 @@ class ProgressService:
                 datetime.now(timezone.utc) if progress.is_completed else None
             )
             progress = self.repository.update(progress)
+
+        # Activity triggers
+        if progress.is_completed:
+            self.activity_service.record(
+                user_id=current_user.id,
+                activity_type=ActivityType.LESSON_COMPLETED,
+                title=f"Completed lesson: {lesson.title}",
+            )
+
+        self.activity_service.record(
+            user_id=current_user.id,
+            activity_type=ActivityType.PROGRESS_UPDATED,
+            title=f"Progress updated for lesson: {lesson.title}",
+        )
 
         return LessonProgressResponse(
             lesson_id=progress.lesson_id,

@@ -4,14 +4,15 @@ from sqlmodel import Session
 from app.core.auth import get_current_admin, get_current_mentor
 from app.core.session import get_session
 from app.features.auth.model import User
+from app.features.activity.repository import ActivityRepository
+from app.features.activity.service import ActivityService
 from app.features.progress.repository import ProgressRepository
 from app.features.progress.service import ProgressService
 from app.features.submissions.schema import SubmissionResponse
 
 from .repository import MentorRepository
-from .schema import AssignedLearnerSummary, AssignLearnerToMentor, MentorLearnerResponse
+from .schema import AssignedLearnerSummary, AssignLearnerToMentor, MentorLearnerResponse, CheckInCreate, CheckInResponse, CheckInUpdate 
 from .service import MentorService
-from .schema import CheckInCreate, CheckInResponse, CheckInUpdate
 
 
 router = APIRouter(
@@ -30,8 +31,12 @@ def get_mentor_service(
 def get_progress_service(
     session: Session = Depends(get_session),
 ) -> ProgressService:
-    repository = ProgressRepository(session)
-    return ProgressService(repository=repository, session=session)
+    progress_repository = ProgressRepository(session)
+
+    activity_repository = ActivityRepository(session)
+    activity_service = ActivityService(activity_repository)
+
+    return ProgressService(repository=progress_repository, session=session, activity_service=activity_service)
 
 
 @router.post(

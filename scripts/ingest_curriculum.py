@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -8,7 +9,7 @@ from typing import List
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sqlmodel import Session, select
+from sqlmodel import Session, select, SQLModel
 
 from app.agent.embeddings import EmbeddingsClient
 from app.agent.model import ContentEmbedding
@@ -25,6 +26,11 @@ def chunk_text(text: str, chunk_size: int = 800, chunk_overlap: int = 100) -> Li
         chunk_overlap=chunk_overlap,
     )
     return splitter.split_text(text)
+
+
+def content_hash(text: str) -> str:
+    """Deterministic hash of chunk text, used to detect unchanged content on re-ingest."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def main():
@@ -83,11 +89,16 @@ def main():
             )
             embeddings = embed_client.embed_texts(chunks)
 
-            for chunk_text_body, vector in zip(chunks, embeddings):
+            for idx, (chunk_text_body, vector) in enumerate(zip(chunks, embeddings)):
                 record = ContentEmbedding(
                     course_id=module.course_id,
                     module_id=lesson.module_id,
                     content_type="curriculum",
+                    source_type="lesson",
+                    source_id=lesson.id,
+                    chunk_index=idx,
+                    content_hash=content_hash(chunk_text_body),
+                    embedding_model=embed_client.model,
                     text=chunk_text_body,
                     embedding=vector,
                 )
@@ -123,11 +134,16 @@ def main():
             )
             embeddings = embed_client.embed_texts(chunks)
 
-            for chunk_text_body, vector in zip(chunks, embeddings):
+            for idx, (chunk_text_body, vector) in enumerate(zip(chunks, embeddings)):
                 record = ContentEmbedding(
                     course_id=module.course_id,
                     module_id=resource.module_id,
                     content_type="resource",
+                    source_type="resource",
+                    source_id=resource.id,
+                    chunk_index=idx,
+                    content_hash=content_hash(chunk_text_body),
+                    embedding_model=embed_client.model,
                     text=chunk_text_body,
                     embedding=vector,
                 )
@@ -143,7 +159,7 @@ def main():
                     faqs = json.load(f)
 
                 print(f"Found {len(faqs)} FAQs.")
-                for faq in faqs:
+                for faq_idx, faq in enumerate(faqs):
                     course_id = faq.get("course_id")
                     question = faq.get("question")
                     answer = faq.get("answer")
@@ -151,6 +167,13 @@ def main():
                     if not question or not answer:
                         print(f"Warning: Invalid FAQ entry {faq}. Skipping.")
                         continue
+
+                    # Prefer a stable id from the FAQ entry itself if present;
+                    # fall back to file position only when no id is given.
+                    # Using pure file position is brittle (shifts if entries
+                    # are reordered/inserted), so this keeps source_id stable
+                    # across re-ingests whenever the data provides one.
+                    faq_source_id = faq.get("id", faq_idx)
 
                     full_text = f"Frequently Asked Question: {question}\nAnswer: {answer}"
                     chunks = chunk_text(full_text)
@@ -160,11 +183,16 @@ def main():
                     )
                     embeddings = embed_client.embed_texts(chunks)
 
-                    for chunk_text_body, vector in zip(chunks, embeddings):
+                    for idx, (chunk_text_body, vector) in enumerate(zip(chunks, embeddings)):
                         record = ContentEmbedding(
                             course_id=course_id,
                             module_id=None,
                             content_type="faq",
+                            source_type="faq",
+                            source_id=faq_source_id,
+                            chunk_index=idx,
+                            content_hash=content_hash(chunk_text_body),
+                            embedding_model=embed_client.model,
                             text=chunk_text_body,
                             embedding=vector,
                         )
@@ -181,5 +209,4 @@ def main():
 
 
 if __name__ == "__main__":
-    from sqlmodel import SQLModel  # Needed for clearing tables reference
     main()

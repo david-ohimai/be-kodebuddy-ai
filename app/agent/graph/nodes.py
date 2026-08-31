@@ -473,25 +473,21 @@ def make_confidence_gate_node():
             if policy_violation:
                 reason = EscalationReason.POLICY_VIOLATION
                 detail = (
-                    "Draft response contained a code block long enough to "
-                    "be a full solution."
+                    "Draft response contained a code block long enough to be a full solution."
                 )
             elif parser_failed:
                 reason = EscalationReason.PARSER_FAILURE
-                detail = "Could not parse a structured"
-                "response from the model."
+                detail = "Could not parse a structured response from the model."
             elif not chunks:
                 reason = EscalationReason.NO_RELEVANT_CONTEXT
-                detail = "No curriculum or FAQ content"
-                "was retrieved for this question."
+                detail = "No curriculum or FAQ content was retrieved for this question."
             elif (
                     not had_relevant_retrieval
                     or top_score < MIN_CONFIDENT_TOP_SCORE
             ):
                 reason = EscalationReason.LOW_RETRIEVAL_CONFIDENCE
                 detail = (
-                    f"Top retrieval score {top_score:.3f} did not clear "
-                    "the confidence bar."
+                    f"Top retrieval score {top_score:.3f} did not clear the confidence bar."
                 )
             elif model_uncertain:
                 reason = EscalationReason.MODEL_UNCERTAINTY

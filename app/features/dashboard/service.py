@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 
 from app.features.dashboard.repository import DashboardRepository
 from app.features.dashboard.schema import (
+    AdminCohortBreakdown,
     AdminDashboardResponse,
+    DashboardActivity,
     LearnerAssignmentStatus,
     LearnerCourseProgress,
     LearnerDashboardResponse,
@@ -19,10 +21,37 @@ class DashboardService:
     def __init__(self, repository: DashboardRepository):
         self.repository = repository
 
+  
+  # ---------- ACTIVITY HELPER ----------
+
+    def _format_activities(
+        self,
+        activities,
+    ) -> list[DashboardActivity]:
+
+        return [
+            DashboardActivity(
+                id=activity.id,
+                activity_type=activity.activity_type,
+                title=activity.title,
+                description=activity.description,
+                created_at=activity.created_at,
+            )
+            for activity in activities
+            if activity.id is not None
+        ]
 
     # ---------- ADMIN DASHBOARD ----------
 
     def get_admin_dashboard(self) -> AdminDashboardResponse:
+
+        activities = self.repository.get_admin_activities(
+                limit=20
+            )
+
+        cohort_breakdown = (
+        self.repository.get_cohort_breakdown()
+        )    
 
         return AdminDashboardResponse(
             total_users=self.repository.get_total_users(),
@@ -37,6 +66,11 @@ class DashboardService:
             active_courses=self.repository.get_active_courses(),
             total_submissions=self.repository.get_total_submissions(),
             pending_grades=self.repository.get_pending_grades(),
+            activities=self._format_activities(activities),
+            cohort_breakdown=[
+                AdminCohortBreakdown(**item)
+                for item in cohort_breakdown
+            ],
         )
 
 
@@ -128,6 +162,8 @@ class DashboardService:
                 )
             )
 
+        # ---------- ASSIGNMENTS ----------
+
         assignments = (
             self.repository.get_learner_assignments(
                 learner_id
@@ -180,6 +216,13 @@ class DashboardService:
                 )
             )
 
+        activities = (
+            self.repository.get_learner_activities(
+                learner_id,
+                limit=20,
+            )
+        )
+
         overall_percentage = (
             (
                 completed_lessons
@@ -189,6 +232,7 @@ class DashboardService:
             if total_lessons
             else 0
         )
+        
 
         return LearnerDashboardResponse(
             total_courses=len(courses),
@@ -201,6 +245,7 @@ class DashboardService:
             ),
             courses=course_progress,
             assignments=assignment_status,
+            activities=self._format_activities(activities),
         )
 
 
@@ -285,6 +330,12 @@ class DashboardService:
             total_submissions += len(submissions)
             total_pending_grades += pending_grades
 
+        activities = (
+            self.repository.get_trainer_activities(
+                trainer_id,
+                limit=20,
+            )
+        )
 
         return TrainerDashboardResponse(
             total_courses=len(courses),
@@ -292,6 +343,7 @@ class DashboardService:
             total_learners=total_learners,
             total_submissions=total_submissions,
             pending_grades=total_pending_grades,
+            activities=self._format_activities(activities),
         )
 
 
@@ -430,10 +482,18 @@ class DashboardService:
                 )
             )
 
+        activities = (
+            self.repository.get_mentor_activities(
+                mentor_id,
+                limit=20,
+            )
+        )
+
         return MentorDashboardResponse(
             total_learners=len(learners),
             total_check_ins=total_check_ins,
             upcoming_check_ins=upcoming_check_ins,
             completed_check_ins=completed_check_ins,
             learners=learner_progress,
+            activities=self._format_activities(activities)
         )
