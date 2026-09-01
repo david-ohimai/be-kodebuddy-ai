@@ -44,10 +44,16 @@ class AssignmentRepository:
 
         The name is joined here rather than fetched per row by the caller,
         which would be an N+1 on the list endpoint.
+
+        The join is a LEFT OUTER JOIN on purpose. An inner join would drop the
+        assignment entirely if its creator row were ever missing — a learner
+        would silently lose an assignment they are supposed to do, rather than
+        just seeing it without a byline. The FK on created_by makes that
+        unlikely today, but a display name should never be able to hide work.
         """
         statement = (
             select(Assignment, User.full_name)
-            .join(User, User.id == Assignment.created_by)
+            .join(User, User.id == Assignment.created_by, isouter=True)
             .where(Assignment.is_active == True)  # noqa: E712
         )
 
@@ -66,10 +72,15 @@ class AssignmentRepository:
         module_id: int,
         assignment_id: int,
     ) -> tuple[Assignment, str | None] | None:
-        """One assignment plus the creating trainer's display name."""
+        """
+        One assignment plus the creating trainer's display name.
+
+        LEFT OUTER JOIN for the same reason as `get_all_assignment`: a missing
+        creator must cost the byline, not the assignment.
+        """
         statement = (
             select(Assignment, User.full_name)
-            .join(User, User.id == Assignment.created_by)
+            .join(User, User.id == Assignment.created_by, isouter=True)
             .where(
                 Assignment.id == assignment_id,
                 Assignment.module_id == module_id,
