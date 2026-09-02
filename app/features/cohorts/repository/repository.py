@@ -98,3 +98,12 @@ class CohortRepository:
         self.session.commit()
 
         return True
+
+    def get_current_cohort(self) -> Cohort | None:
+        statement = (
+            select(Cohort)
+            .where(Cohort.is_open == True)
+            .order_by(Cohort.id.desc())
+        )
+
+        return self.session.exec(statement).first()

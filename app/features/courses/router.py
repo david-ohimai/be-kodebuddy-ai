@@ -9,6 +9,7 @@ from .repository import CourseRepository
 from .schema import (
     AssignLearner,
     AssignTrainer,
+    CourseAssignmentResponse,
     CourseCreate,
     CourseResponse,
     CourseUpdate,
@@ -87,6 +88,34 @@ def assign_trainer(
         data.trainer_id,
     )
 
+@router.post(
+    "/{course_id}/select",
+    response_model=CourseAssignmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def select_course(
+    course_id: int,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    service: CourseService = Depends(
+        get_course_service
+    ),
+):
+    assignment = service.select_course(
+        course_id=course_id,
+        learner=current_user,
+    )
+
+    course = service.get_course(
+        course_id=assignment.course_id,
+        current_user=current_user,
+    )
+
+    return CourseAssignmentResponse(
+        message="Course selected successfully.",
+        course=course,
+    )
 
 # ---------------- ALL AUTHENTICATED USERS ----------------
 
@@ -117,6 +146,7 @@ def get_course(
 
 @router.post(
     "/{course_id}/assign-learner",
+    response_model=CourseAssignmentResponse,
 )
 def assign_learner(
     course_id: int,
@@ -124,7 +154,18 @@ def assign_learner(
     current_admin: User = Depends(get_current_admin),
     service: CourseService = Depends(get_course_service),
 ):
-    return service.assign_learner(
-        course_id,
-        data.learner_id,
+
+    assignment = service.assign_learner(
+        course_id=course_id,
+        learner_id=data.learner_id,
+    )
+
+    course = service.get_course_for_admin(
+        assignment.course_id
+    )
+
+
+    return CourseAssignmentResponse(
+        message="Learner course assigned successfully.",
+        course=course,
     )

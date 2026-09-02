@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,6 +20,8 @@ class AssignmentCreate(BaseModel):
 
     requirements: list[AssignmentItem] | None = None
 
+    start_date: datetime
+
     due_date: datetime
 
     maximum_score: float = Field(
@@ -41,6 +42,8 @@ class AssignmentUpdate(BaseModel):
 
     requirements: list[AssignmentItem] | None = None
 
+    start_date: datetime | None = None
+
     due_date: datetime | None = None
 
     maximum_score: float | None = Field(
@@ -58,9 +61,11 @@ class AssignmentResponse(BaseModel):
     description: str | None
     instructions: list[AssignmentItem] | None
     requirements: list[AssignmentItem] | None
+    start_date: datetime
     due_date: datetime
     maximum_score: float
     created_by: int
+    created_by_name: str | None
     created_at: datetime
     updated_at: datetime
     is_active: bool
