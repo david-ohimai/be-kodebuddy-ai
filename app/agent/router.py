@@ -2,9 +2,10 @@ import logging
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.agent.repository import ConversationHistoryRepository
+from app.agent.graph.state import EscalationReason
+from app.agent.repository import AgentRepository, ConversationHistoryRepository
 from app.agent.service import (
     NotEnrolledError,
     answer_assignment_guidance,
@@ -14,6 +15,9 @@ from app.agent.types import EscalationWriteError
 from app.core.auth import get_current_learner
 from app.core.session import get_session
 from app.features.auth.model import User
+from app.features.courses.model import CourseTrainer
+from app.features.notifications.repository import NotificationRepository
+from app.features.notifications.service import NotificationService
 
 from .schema import (
     AgentTurnResponse,
@@ -141,6 +145,74 @@ def chat(
             question=body.question,
         )
     return AgentTurnResponse(**result.__dict__)
+
+
+@router.post(
+    "/escalate",
+    response_model=dict,
+)
+def create_escalation(
+    body: dict,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_learner),
+):
+    """Direct learner-triggered escalation, matching the same row contract as graph escalation writes."""
+    course_id = int(body.get("course_id"))
+    question = str(body.get("question") or "").strip()
+    reason_value = str(body.get("reason") or "").strip()
+    detail = str(body.get("detail") or "").strip() or None
+
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required.")
+    if not reason_value:
+        raise HTTPException(status_code=400, detail="Reason is required.")
+
+    try:
+        reason = EscalationReason(reason_value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid escalation reason: {reason_value}",
+        ) from exc
+
+    repository = AgentRepository(session, learner_id=current_user.id)
+    if not repository.is_enrolled(course_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Learner {current_user.id} is not enrolled in course {course_id}.",
+        )
+
+    trainer_row = session.exec(
+        select(CourseTrainer)
+        .where(CourseTrainer.course_id == course_id)
+        .order_by(CourseTrainer.id)
+    ).first()
+    trainer_id = trainer_row.trainer_id if trainer_row is not None else None
+
+    escalation_id = repository.create_escalation(
+        course_id=course_id,
+        question=question,
+        reason=reason,
+        trainer_id=trainer_id,
+        detail=detail,
+    )
+
+    notification_service = NotificationService(NotificationRepository(session))
+    notification_service.notify_escalation_created(
+        learner_id=current_user.id,
+        trainer_id=trainer_id,
+        escalation_id=escalation_id,
+        course_id=course_id,
+        reason=reason.value,
+    )
+
+    return {
+        "id": escalation_id,
+        "status": "open",
+        "learner_id": current_user.id,
+        "course_id": course_id,
+        "reason": reason.value,
+    }
 
 
 @router.get(

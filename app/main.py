@@ -16,7 +16,8 @@ from app.agent.router import router as agent_router
 from app.features.mentors.router import router as mentor_router
 from app.features.activity.router import router as activity_router
 from app.features.dashboard.router import router as dashboard_router
-
+from app.features.escalations.router import router as escalation_router
+from app.features.notifications.router import router as notification_router
 
 
 app = FastAPI(
@@ -52,6 +53,8 @@ app.include_router(agent_router)
 app.include_router(mentor_router)
 app.include_router(activity_router)
 app.include_router(dashboard_router)
+app.include_router(escalation_router)
+app.include_router(notification_router)
 
 @app.get("/")
 def home():
