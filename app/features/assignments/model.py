@@ -36,6 +36,10 @@ class Assignment(SQLModel, table=True):
         sa_column=Column(JSON),
     )
 
+    start_date: datetime = Field(
+        sa_column=Column(DateTime(timezone=True),nullable=False),
+    )
+
     due_date: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )

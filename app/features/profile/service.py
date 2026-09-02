@@ -1,9 +1,14 @@
 from datetime import datetime, timezone
-from fastapi import HTTPException
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import HTTPException, UploadFile, status
 
 from app.core.email import send_role_change_email
 from app.features.auth.model import User
+from app.features.courses.repository import CourseRepository
 from app.features.profile.schema import (
+    ProfilePictureResponse,
     UpdateProfile,
     UpdateUserRole,
     UserDto,
@@ -12,18 +17,55 @@ from app.features.profile.schema import (
 from app.features.profile.repository import ProfileRepository
 
 
+PROFILE_PICTURE_DIR = Path("uploads/profile_pictures")
+
+PROFILE_PICTURE_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
 class ProfileService:
 
-    def __init__(self, repository: ProfileRepository):
+    def __init__(self, repository: ProfileRepository, course_repository: CourseRepository):
         self.repository = repository
+        self.course_repository = course_repository
 
+    # USER DTO
+
+    def _get_course_id(
+        self,
+        user: User,
+    ) -> int | None:
+
+        assignment = self.course_repository.get_learner_assignment(user.id)
+
+        if assignment is None: 
+            return None
+
+        return assignment.course_id
+
+    def _to_user_dto(
+        self,
+        user: User,
+    ) -> UserDto:
+
+        return UserDto(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role,
+            is_active=user.is_active,
+            profile_picture=user.profile_picture,
+            course_id=self._get_course_id(user),
+            created_at=user.created_at,
+        )
 
     def get_all_users(self) -> list[UserDto]:
 
         users = self.repository.get_all()
 
         return [
-            UserDto.model_validate(user)
+            self._to_user_dto(user)
             for user in users
         ]
 
@@ -41,7 +83,7 @@ class ProfileService:
                 detail="User not found",
             )
 
-        return UserDto.model_validate(user)
+        return self._to_user_dto(user)
 
     def update_profile(
         self,
@@ -62,11 +104,118 @@ class ProfileService:
 
         return UserResponse(
             message="Profile updated successfully",
-            user=UserDto.model_validate(updated_user),
+            user=self._to_user_dto(updated_user),
         )
 
+    # ------------ UPLOAD PROFILE PICTURE ------------
 
-    async def update_user_role(
+    async def upload_profile_picture(
+        self,
+        user: User,
+        file: UploadFile,
+    ) -> ProfilePictureResponse:
+
+        # Check MIME type
+        if (
+            not file.content_type
+            or not file.content_type.startswith("image/")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only image files are allowed",
+            )
+
+        # Check extension
+        extension = Path(file.filename or "").suffix.lower()
+
+        allowed_extensions = {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+        }
+
+        if extension not in allowed_extensions:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported image format",
+            )
+
+        # Read file
+        contents = await file.read()
+
+        # Maximum size: 5MB
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Profile picture must not exceed 5MB",
+            )
+
+        # Delete old profile picture
+        if user.profile_picture:
+
+            old_path = Path(
+                user.profile_picture.lstrip("/")
+            )
+
+            if old_path.exists():
+                old_path.unlink()
+
+        # Generate unique filename
+        filename = (
+            f"{uuid4().hex}{extension}"
+        )
+
+        file_path = (
+            PROFILE_PICTURE_DIR / filename
+        )
+
+        # Save file
+        file_path.write_bytes(contents)
+
+        # Save URL/path in database
+        user.profile_picture = (
+            f"/uploads/profile_pictures/{filename}"
+        )
+
+        user.updated_at = datetime.now(timezone.utc)
+
+        self.repository.update(user)
+
+        return ProfilePictureResponse(
+            message="Profile picture uploaded successfully",
+            profile_picture=user.profile_picture,
+        )
+
+    # ------------ REMOVE PROFILE PICTURE ------------
+    
+    def remove_profile_picture(
+        self,
+        user: User,
+    ) -> ProfilePictureResponse:
+
+        if user.profile_picture:
+
+            file_path = Path(
+                user.profile_picture.lstrip("/")
+            )
+
+            if file_path.exists():
+                file_path.unlink()
+
+        user.profile_picture = None
+
+        user.updated_at = datetime.now(timezone.utc)
+
+        self.repository.update(user)
+
+        return ProfilePictureResponse(
+            message="Profile picture removed successfully",
+            profile_picture=None,
+        )
+
+    def update_user_role(
         self,
         user_id: int,
         data: UpdateUserRole,
@@ -98,5 +247,5 @@ class ProfileService:
 
         return UserResponse(
             message="User role updated successfully",
-            user=UserDto.model_validate(updated_user),
+            user=self._to_user_dto(updated_user),
         )
