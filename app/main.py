@@ -16,7 +16,7 @@ from app.agent.router import router as agent_router
 from app.features.mentors.router import router as mentor_router
 from app.features.activity.router import router as activity_router
 from app.features.dashboard.router import router as dashboard_router
-
+from fastapi.staticfiles import StaticFiles
 
 
 app = FastAPI(
@@ -35,6 +35,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount(
+    "/uploads",
+    StaticFiles(directory="uploads"),
+    name="uploads",
+)
 
 app.include_router(user_router)
 app.include_router(profile_router)
