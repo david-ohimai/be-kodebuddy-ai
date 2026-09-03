@@ -24,6 +24,21 @@ For local development before that module lands, set
 `AGENT_FAKE_EMBEDDINGS=1` to use a deterministic stub. It produces stable
 vectors so RBAC and SQL wiring can be exercised end to end, but the similarity
 ordering it yields is meaningless — never enable it outside local testing.
+
+QUERY-LEVEL CACHE
+------------------
+Every graph turn calls this module's `embed_query` twice with the *identical*
+text: once from `tools/search_curriculum.py`, once from `tools/search_faqs.py`
+(both are handed the learner's raw question — see nodes.py::retrieve). That
+was two real Voyage API calls per turn for one embedding, which matters a lot
+on a rate-limited account: it halves the number of requests available before
+a transient rate-limit failure turns into an unnecessary auto-escalation (see
+`_embed_query_cached` below, and app/agent/embeddings.py for the retry side of
+that same fix). `embed_query` now memoizes on the exact, whitespace-trimmed
+query text — an in-process cache, not persisted anywhere, and bounded so it
+can't grow unbounded over a long-running process. Only successful lookups are
+cached; a failure is never memoized, so a transient failure on one call still
+gets a fresh attempt on the very next one, not a cached exception.
 """
 
 from __future__ import annotations
@@ -33,6 +48,7 @@ import logging
 import math
 import os
 import struct
+from functools import lru_cache
 from typing import Callable, Sequence
 
 from app.agent.types import EmbeddingUnavailableError
@@ -44,6 +60,13 @@ _EMBED_FUNCTION_NAMES = ("embed_query", "embed_text", "embed")
 
 # Dimensionality of the stub vectors. Only used when AGENT_FAKE_EMBEDDINGS=1.
 _FAKE_EMBEDDING_DIM = 1024
+
+# Bounds the query-level embedding cache described in the module docstring.
+# Sized for "the same question embedded twice within one turn" (the actual
+# problem this fixes), not as a long-lived semantic cache -- 256 distinct
+# in-flight query strings is generous headroom for that without holding
+# onto memory indefinitely across a long process lifetime.
+_EMBED_CACHE_SIZE = 256
 
 _cached_embedder: Callable[[str], Sequence[float]] | None = None
 
@@ -106,18 +129,16 @@ def _resolve_embedder() -> Callable[[str], Sequence[float]]:
     )
 
 
-def embed_query(text: str) -> Sequence[float]:
+@lru_cache(maxsize=_EMBED_CACHE_SIZE)
+def _embed_query_cached(text: str) -> tuple[float, ...]:
     """
-    Embed a single search query.
+    Does the actual embed-and-validate work, keyed by exact query text.
 
-    Raises:
-        EmbeddingUnavailableError: if no provider can be resolved, the query is
-            blank, or the provider itself fails. Never returns an empty vector,
-            because a caller cannot distinguish that from "no matches".
+    `functools.lru_cache` only memoizes a *successful* return — if this
+    raises, nothing is cached and the next call (even with the same text)
+    recomputes from scratch. That's exactly the behaviour wanted here: a
+    transient provider failure must never get "cached" as a permanent one.
     """
-    if not text or not text.strip():
-        raise EmbeddingUnavailableError("Cannot embed an empty query.")
-
     global _cached_embedder
     if _cached_embedder is None:
         _cached_embedder = _resolve_embedder()
@@ -136,13 +157,30 @@ def embed_query(text: str) -> Sequence[float]:
             "Embedding provider returned an empty vector."
         )
 
-    return vector
+    return tuple(vector)
+
+
+def embed_query(text: str) -> Sequence[float]:
+    """
+    Embed a single search query.
+
+    Raises:
+        EmbeddingUnavailableError: if no provider can be resolved, the query is
+            blank, or the provider itself fails. Never returns an empty vector,
+            because a caller cannot distinguish that from "no matches".
+    """
+    if not text or not text.strip():
+        raise EmbeddingUnavailableError("Cannot embed an empty query.")
+
+    return list(_embed_query_cached(text.strip()))
 
 
 def reset_embedder_cache() -> None:
-    """Clear the memoised provider. Intended for tests."""
+    """Clear the memoised provider and the query-level embedding cache.
+    Intended for tests."""
     global _cached_embedder
     _cached_embedder = None
+    _embed_query_cached.cache_clear()
 
 
 def to_pgvector_literal(vector: Sequence[float]) -> str:

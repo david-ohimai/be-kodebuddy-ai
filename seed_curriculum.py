@@ -7,7 +7,7 @@ from app.features.cohorts.models.model import Cohort
 from app.features.courses.model import Course
 from app.features.modules.model import Module
 from app.features.lessons.model import Lesson
-from app.features.resources.model import Resource, ResourceType
+from app.features.resources.model import Resource
 
 
 def seed_curriculum():
@@ -110,7 +110,7 @@ def seed_curriculum():
                 module_id=module.id,
                 title="Python Control Flow Cheat Sheet",
                 description="A quick cheat sheet summarizing python if statements and loops.",
-                type=ResourceType.LINK,
+                type="link",  # Resource.type is now a plain str, not a ResourceType enum
                 url="https://docs.python.org/3/tutorial/controlflow.html",
                 created_by=admin_id,
                 is_active=True,
