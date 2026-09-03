@@ -28,6 +28,19 @@ class EscalationService:
             learner_id=learner_id,
         )
 
+    def list_for_learner(
+        self,
+        learner_id: int,
+        *,
+        status: str | None = None,
+        course_id: int | None = None,
+    ) -> list[Escalation]:
+        return self.repository.list_for_learner(
+            learner_id,
+            status=status,
+            course_id=course_id,
+        )
+
     def get_for_trainer(
         self,
         trainer_id: int,
@@ -41,6 +54,26 @@ class EscalationService:
             )
 
         if escalation.trainer_id not in (None, trainer_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not allowed to view this escalation.",
+            )
+
+        return escalation
+
+    def get_for_learner(
+        self,
+        learner_id: int,
+        escalation_id: int,
+    ) -> Escalation:
+        escalation = self.repository.get_by_id(escalation_id)
+        if escalation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Escalation not found.",
+            )
+
+        if escalation.learner_id != learner_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not allowed to view this escalation.",
