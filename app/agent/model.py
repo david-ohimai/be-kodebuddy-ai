@@ -96,6 +96,16 @@ class Escalation(SQLModel, table=True):
     # trainer can tell "the agent was close but not quite sure" apart from
     # "the agent had nothing to go on", without re-deriving it from `reason`.
     confidence_score: Optional[float] = Field(default=None, nullable=True)
+    # The trainer's reply to this escalation, kept on its own column instead
+    # of being appended into `detail` -- `detail` stays the agent's field
+    # (why it wasn't confident); this is the trainer's answer to the
+    # learner's question, a different thing written at a different time by
+    # a different actor. Nullable: unset until a trainer responds.
+    response: Optional[str] = Field(default=None, nullable=True)
+    # When `response` was last written. Nullable until a trainer responds;
+    # overwritten (not appended) on every subsequent PATCH, so it always
+    # reflects the most recent reply.
+    responded_at: Optional[datetime] = Field(default=None, nullable=True)
     status: str = Field(default="open", max_length=50, index=True)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
