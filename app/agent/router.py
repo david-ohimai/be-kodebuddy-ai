@@ -18,6 +18,8 @@ from app.features.auth.model import User
 from app.features.courses.model import CourseTrainer
 from app.features.notifications.repository import NotificationRepository
 from app.features.notifications.service import NotificationService
+from app.features.escalations.repository import EscalationRepository
+from app.features.escalations.schema import EscalationCreate, EscalationResponse
 
 from .schema import (
     AgentTurnResponse,
@@ -149,24 +151,35 @@ def chat(
 
 @router.post(
     "/escalate",
-    response_model=dict,
+    response_model=EscalationResponse,
 )
 def create_escalation(
-    body: dict,
+    body: EscalationCreate,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_learner),
 ):
-    """Direct learner-triggered escalation, matching the same row contract as graph escalation writes."""
-    course_id = int(body.get("course_id"))
-    question = str(body.get("question") or "").strip()
-    reason_value = str(body.get("reason") or "").strip()
-    detail = str(body.get("detail") or "").strip() or None
+    """
+    Direct learner-triggered escalation -- what the frontend's "Escalate to
+    trainer" button calls, after a chat turn came back with
+    AgentTurnResponse.escalation_available=True.
 
-    if not question:
-        raise HTTPException(status_code=400, detail="Question is required.")
-    if not reason_value:
-        raise HTTPException(status_code=400, detail="Reason is required.")
+    Was previously an untyped `dict` body returning a hand-built `dict` --
+    now a real typed contract (`EscalationCreate` in/`EscalationResponse`
+    out, both app/features/escalations/schema.py) shared with the
+    trainer-facing GET endpoints in app/features/escalations/router.py, so
+    a caller gets proper 422 validation instead of a KeyError-shaped 500,
+    and gets back the full row it just created (including whatever
+    module_id/assignment_id/draft_response/confidence_score it sent),
+    rather than a bespoke five-key summary.
 
+    `module_id`, `assignment_id`, `draft_response`, and `confidence_score`
+    are all optional and, when this is called right after a chat turn,
+    should be the same values the frontend already received on that turn's
+    request (module_id/assignment_id) and response
+    (draft_response/confidence_score) -- round-tripped, not re-typed by the
+    learner or re-derived here.
+    """
+    reason_value = body.reason.strip()
     try:
         reason = EscalationReason(reason_value)
     except ValueError as exc:
@@ -176,25 +189,29 @@ def create_escalation(
         ) from exc
 
     repository = AgentRepository(session, learner_id=current_user.id)
-    if not repository.is_enrolled(course_id):
+    if not repository.is_enrolled(body.course_id):
         raise HTTPException(
             status_code=403,
-            detail=f"Learner {current_user.id} is not enrolled in course {course_id}.",
+            detail=f"Learner {current_user.id} is not enrolled in course {body.course_id}.",
         )
 
     trainer_row = session.exec(
         select(CourseTrainer)
-        .where(CourseTrainer.course_id == course_id)
+        .where(CourseTrainer.course_id == body.course_id)
         .order_by(CourseTrainer.id)
     ).first()
     trainer_id = trainer_row.trainer_id if trainer_row is not None else None
 
     escalation_id = repository.create_escalation(
-        course_id=course_id,
-        question=question,
+        course_id=body.course_id,
+        module_id=body.module_id,
+        assignment_id=body.assignment_id,
+        question=body.question,
         reason=reason,
         trainer_id=trainer_id,
-        detail=detail,
+        detail=body.detail,
+        draft_response=body.draft_response,
+        confidence_score=body.confidence_score,
     )
 
     notification_service = NotificationService(NotificationRepository(session))
@@ -202,17 +219,12 @@ def create_escalation(
         learner_id=current_user.id,
         trainer_id=trainer_id,
         escalation_id=escalation_id,
-        course_id=course_id,
+        course_id=body.course_id,
         reason=reason.value,
     )
 
-    return {
-        "id": escalation_id,
-        "status": "open",
-        "learner_id": current_user.id,
-        "course_id": course_id,
-        "reason": reason.value,
-    }
+    escalation = EscalationRepository(session).get_by_id(escalation_id)
+    return EscalationResponse.model_validate(escalation)
 
 
 @router.get(
