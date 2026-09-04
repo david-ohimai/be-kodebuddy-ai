@@ -25,7 +25,7 @@ class CourseService:
         self,
         data: CourseCreate,
         admin_id: int,
-    ) -> Course:
+    ) -> CourseResponse:
 
         cohort = self.cohort_repository.get_by_id(data.cohort_id)
 
@@ -56,13 +56,16 @@ class CourseService:
             created_by=admin_id,
         )
 
-        return self.repository.create(course)
+        created_course = self.repository.create(course)
+
+
+        return CourseResponse(**created_course.model_dump(),is_selected=False,)
 
     def update_course(
         self,
         course_id: int,
         data: CourseUpdate,
-    ) -> Course:
+    ) -> CourseResponse:
 
         course = self.get_course_for_admin(course_id)
 
@@ -92,7 +95,8 @@ class CourseService:
 
         course.updated_at = datetime.now(timezone.utc)
 
-        return self.repository.update(course)
+        updated_course = self.repository.update(course)
+        return CourseResponse(**updated_course.model_dump(), is_selected=False)
 
     def delete_course(self, course_id: int):
         course = self.get_course_for_admin(course_id)
