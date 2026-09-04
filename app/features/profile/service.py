@@ -16,7 +16,7 @@ from app.features.profile.schema import (
 )
 from app.features.profile.repository import ProfileRepository
 
-
+#profile 
 PROFILE_PICTURE_DIR = Path("uploads/profile_pictures")
 
 PROFILE_PICTURE_DIR.mkdir(
