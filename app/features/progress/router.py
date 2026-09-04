@@ -4,6 +4,8 @@ from sqlmodel import Session
 from app.core.auth import get_current_learner
 from app.core.session import get_session
 from app.features.auth.model import User
+from app.features.activity.repository import ActivityRepository
+from app.features.activity.service import ActivityService
 
 from .repository import ProgressRepository
 from .schema import CourseProgressResponse, LessonProgressResponse, ModuleProgressResponse
@@ -19,8 +21,12 @@ router = APIRouter(
 def get_progress_service(
     session: Session = Depends(get_session),
 ) -> ProgressService:
-    repository = ProgressRepository(session)
-    return ProgressService(repository=repository, session=session)
+    progress_repository = ProgressRepository(session)
+
+    activity_repository = ActivityRepository(session)
+    activity_service = ActivityService(activity_repository)
+
+    return ProgressService(repository=progress_repository, session=session, activity_service=activity_service,)
 
 
 @router.post(

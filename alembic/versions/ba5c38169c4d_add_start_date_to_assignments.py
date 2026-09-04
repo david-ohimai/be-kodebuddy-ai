@@ -1,8 +1,8 @@
-"""merge migration heads
+"""add start date to assignments
 
-Revision ID: 3e2b6ce6147f
-Revises: 5bade243b19a, eb15e00972e6
-Create Date: 2026-08-24 09:10:56.393717
+Revision ID: ba5c38169c4d
+Revises: e0890556db40
+Create Date: 2026-09-02 03:32:24.791625
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '3e2b6ce6147f'
-down_revision: Union[str, Sequence[str], None] = ('5bade243b19a', 'eb15e00972e6')
+revision: str = 'ba5c38169c4d'
+down_revision: Union[str, Sequence[str], None] = 'e0890556db40'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -23,6 +23,8 @@ def upgrade() -> None:
     pass
 
 
+
 def downgrade() -> None:
     """Downgrade schema."""
-    pass
+
+    op.drop_column("assignments", "start_date") 

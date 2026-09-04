@@ -36,6 +36,13 @@ class EscalationReason(str, Enum):
     MODEL_UNCERTAINTY = "model_uncertainty"
     POLICY_VIOLATION = "policy_violation"
     PARSER_FAILURE = "parser_failure"
+    # The retrieval pipeline itself failed (embedding provider down, content
+    # store missing) rather than legitimately finding nothing. Kept distinct
+    # from NO_RELEVANT_CONTEXT: repeated rows in that category likely mean a
+    # curriculum content gap; repeated rows here mean the retrieval
+    # infrastructure is broken and every learner in the window was affected
+    # - those need different alerting.
+    RETRIEVAL_UNAVAILABLE = "retrieval_unavailable"
     # Reserved for a future "talk to a human" intent-detection feature.
     # Not yet triggered anywhere in this graph.
     EXPLICIT_USER_REQUEST = "explicit_user_request"
@@ -50,11 +57,26 @@ class RetrievedChunk(TypedDict):
     """
 
     chunk_id: str
-    course_id: int
+    course_id: int | None
     module_id: int | None
     content_type: str  # "curriculum" | "faq" | "resource"
     text: str
     score: float
+
+
+class ChatRole(str, Enum):
+    """
+    DB-layer role for a stored conversation_history row (app/agent/model.py's
+    ConversationHistory.role). Deliberately a real enum there, unlike
+    ChatTurn.role below — the DB gets the stronger guarantee (only "user" or
+    "assistant" can ever be persisted), while the in-memory ChatTurn stays a
+    plain str so graph code isn't forced into an enum-vs-string conversion on
+    every read of `chat_history`. The service layer (load_chat_history /
+    record_interaction) is the one place that converts between the two.
+    """
+
+    USER = "user"
+    ASSISTANT = "assistant"
 
 
 class ChatTurn(TypedDict):
@@ -67,7 +89,7 @@ class ChatTurn(TypedDict):
     instead of raising a KeyError.
     """
 
-    role: str  # "user" | "assistant"
+    role: str  # "user" | "assistant" — see ChatRole's docstring for why
     message: str
 
 
@@ -105,7 +127,11 @@ class AgentState(TypedDict, total=False):
         written by `reason` (or `no_context`), read by `confidence_gate`
       - gate fields:
         written by `confidence_gate` (or `no_context`), read by `route`
-      - output fields:   written by `route`, read by Dev D's service.py
+      - output fields:   written by `route`, read by Dev D's service.py.
+        Note: `route` now only *recommends* escalation (via
+        `escalation_available`/`escalation_reason`) rather than writing one
+        — the actual write happens out-of-band via the learner-triggered
+        `POST /agent/escalate` endpoint, which never touches this state.
 
     IMPORTANT — state is per-turn, not accumulating: every graph.invoke()
     call should receive a state containing only the input fields below. The
@@ -140,6 +166,11 @@ class AgentState(TypedDict, total=False):
     retrieved_chunks: list[RetrievedChunk]
     # only populated for ASSIGNMENT_GUIDANCE
     assignment_brief: AssignmentBrief | None
+    # True if `retrieve` caught an AgentRetrievalError (Dev B's tools raise
+    # this when the retrieval pipeline itself is broken, not when it
+    # legitimately finds nothing). Read by the conditional edge after
+    # `retrieve` to route straight to `retrieval_error` — see build.py.
+    retrieval_failed: bool
 
     # --- reason node output (also set directly by `no_context`) ---
     draft_response: str
@@ -162,5 +193,19 @@ class AgentState(TypedDict, total=False):
 
     # --- route node output (final) ---
     final_response: str | None
+    # True only once an escalation row has actually been written. `route`
+    # no longer writes one itself (see nodes.py::make_route_node) — this
+    # stays False for every graph-driven turn today and is only ever True
+    # if something upstream of `route` writes an escalation and sets this
+    # directly (kept for forward compatibility / defensive completeness,
+    # not currently exercised by any node).
     escalated: bool
     escalation_id: int | None
+    # True when `route` judged the turn not confident enough to answer
+    # outright and is offering escalation as a choice, without having
+    # written anything. This is what the frontend should use to decide
+    # whether to render the "Escalate to trainer" button — distinct from
+    # `escalated`, which reflects whether a write actually happened. A
+    # learner tapping that button hits POST /agent/escalate separately;
+    # nothing in the graph observes that follow-up call.
+    escalation_available: bool

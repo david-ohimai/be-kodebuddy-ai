@@ -3,6 +3,10 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class AssignmentItem(BaseModel):
+    title: str
+    description: str
+
 class AssignmentCreate(BaseModel):
 
     title: str = Field(
@@ -11,6 +15,12 @@ class AssignmentCreate(BaseModel):
     )
 
     description: str | None = None
+
+    instructions: list[AssignmentItem] | None = None
+
+    requirements: list[AssignmentItem] | None = None
+
+    start_date: datetime
 
     due_date: datetime
 
@@ -28,6 +38,12 @@ class AssignmentUpdate(BaseModel):
 
     description: str | None = None
 
+    instructions: list[AssignmentItem] | None = None
+
+    requirements: list[AssignmentItem] | None = None
+
+    start_date: datetime | None = None
+
     due_date: datetime | None = None
 
     maximum_score: float | None = Field(
@@ -43,9 +59,13 @@ class AssignmentResponse(BaseModel):
     module_id: int
     title: str
     description: str | None
+    instructions: list[AssignmentItem] | None
+    requirements: list[AssignmentItem] | None
+    start_date: datetime
     due_date: datetime
     maximum_score: float
     created_by: int
+    created_by_name: str | None
     created_at: datetime
     updated_at: datetime
     is_active: bool
