@@ -174,7 +174,7 @@ class CourseService:
                 detail="You are not assigned to a cohort.",
             )
 
-        if course.cohort_id != learner_cohort.cohort_id:
+        if course.cohort_id != learner_cohort.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only select a course from your cohort.",
@@ -249,7 +249,7 @@ class CourseService:
                 detail="Learner is not assigned to a cohort.",
             )
 
-        if course.cohort_id != learner_cohort.cohort_id:
+        if course.cohort_id != learner_cohort.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -306,7 +306,7 @@ class CourseService:
                 return []
 
             return self.repository.get_active_courses_by_cohort(
-                learner_cohort.cohort_id
+                learner_cohort.id
             )
         return []
 

@@ -16,7 +16,13 @@ class UserDto(BaseModel):
     role: UserRole
     is_active: bool
     profile_picture: str | None
+
+    cohort_id: int | None = None
+    cohort_name: str | None = None
+
     course_id: int | None = None
+    course_name: str | None = None
+    
     created_at: datetime
 
     model_config = {

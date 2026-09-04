@@ -32,22 +32,25 @@ class ProfileService:
 
     # USER DTO
 
-    def _get_course_id(
-        self,
-        user: User,
-    ) -> int | None:
-
-        assignment = self.course_repository.get_learner_assignment(user.id)
-
-        if assignment is None: 
-            return None
-
-        return assignment.course_id
-
     def _to_user_dto(
         self,
         user: User,
     ) -> UserDto:
+
+        cohort = self.course_repository.get_learner_cohort(
+            user.id
+        )
+
+        course_assignment = self.course_repository.get_learner_assignment(
+            user.id
+        )
+
+        course = None
+
+        if course_assignment:
+            course = self.course_repository.get_by_id(
+                course_assignment.course_id
+            )
 
         return UserDto(
             id=user.id,
@@ -56,7 +59,13 @@ class ProfileService:
             role=user.role,
             is_active=user.is_active,
             profile_picture=user.profile_picture,
-            course_id=self._get_course_id(user),
+
+            cohort_id=cohort.id if cohort else None,
+            cohort_name=cohort.name if cohort else None,
+
+            course_id=course.id if course else None,
+            course_name=course.title if course else None,
+            
             created_at=user.created_at,
         )
 
