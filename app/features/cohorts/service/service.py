@@ -1,4 +1,4 @@
-
+from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
 from app.features.cohorts.models.cohort_learners import CohortLearner
@@ -87,6 +87,24 @@ class CohortService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Cohort not found.",
             )
+
+        update_data = cohort_data.model_dump(
+            exclude_unset=True
+        )
+
+        if update_data.get("is_open") is True:
+            self.repository.close_other_cohorts(
+                cohort_id
+            )
+
+        for field, value in update_data.items():
+            setattr(cohort, field, value)
+
+        cohort.updated_at = datetime.now(timezone.utc)
+
+        self.repository.session.add(cohort)
+        self.repository.session.commit()
+        self.repository.session.refresh(cohort)
 
         return cohort
 
