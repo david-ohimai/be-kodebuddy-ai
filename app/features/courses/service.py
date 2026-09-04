@@ -6,7 +6,7 @@ from app.features.auth.model import User, UserRole
 from app.features.cohorts.repository.repository import CohortRepository
 from .model import Course, CourseLearner
 from .repository import CourseRepository
-from .schema import CourseCreate, CourseUpdate
+from .schema import CourseCreate, CourseResponse, CourseUpdate
 
 
 class CourseService:
@@ -152,6 +152,15 @@ class CourseService:
                 detail="Only learners can select a course.",
             )
 
+        # Get the cohort currently open for onboarding.
+        current_cohort = self.cohort_repository.get_current_cohort()
+
+        if current_cohort is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="There is no open cohort available for course selection onboarding.",
+            )
+
         course = self.repository.get_by_id(course_id)
 
         if course is None:
@@ -166,18 +175,11 @@ class CourseService:
                 detail="This course is not available.",
             )
 
-        learner_cohort = self.repository.get_learner_cohort(learner.id)
-
-        if learner_cohort is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You are not assigned to a cohort.",
-            )
-
-        if course.cohort_id != learner_cohort.id:
+        # Learners can only select a course from the currently active/open cohort.
+        if course.cohort_id != current_cohort.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only select a course from your cohort.",
+                detail="You can only select a course from the current cohort.",
             )
 
         existing_assignment = self.repository.get_learner_assignment(
@@ -285,10 +287,20 @@ class CourseService:
     def get_courses(self, current_user: User):
 
         if current_user.role == UserRole.ADMIN:
-            return self.repository.get_all()
+            courses = self.repository.get_all()
+
+            return [
+                CourseResponse(**course.model_dump(), is_selected=False,)
+                for course in courses
+            ]
 
         if current_user.role == UserRole.TRAINER:
-            return self.repository.get_trainer_courses(current_user.id)
+            courses = self.repository.get_trainer_courses(current_user.id)
+
+            return [
+                CourseResponse(**course.model_dump(), is_selected=False,)
+                for course in courses
+            ]
 
         if current_user.role == UserRole.LEARNER:
             assigned_course = self.repository.get_learner_course(
@@ -296,18 +308,27 @@ class CourseService:
                 )
 
             if assigned_course is not None:
-                return [assigned_course]
+                return [
+                    CourseResponse(
+                        **assigned_course.model_dump(),
+                        is_selected=True,
+                    )
+                ]
 
-            learner_cohort = self.repository.get_learner_cohort(
-                current_user.id
-            )
+            current_cohort = self.cohort_repository.get_current_cohort()
 
-            if learner_cohort is None:
+            if current_cohort is None:
                 return []
 
-            return self.repository.get_active_courses_by_cohort(
-                learner_cohort.id
+            available_courses = (
+                self.repository.get_active_courses_by_cohort(
+                    current_cohort.id
+                )
             )
+
+            return [CourseResponse( **course.model_dump(), is_selected=False,)
+                for course in available_courses]
+        
         return []
 
     def get_course(
