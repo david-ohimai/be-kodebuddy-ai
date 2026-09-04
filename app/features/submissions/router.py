@@ -4,8 +4,6 @@ from sqlmodel import Session
 from app.core.auth import get_current_user
 from app.core.session import get_session
 from app.features.auth.model import User, UserRole
-from app.features.activity.repository import ActivityRepository
-from app.features.activity.service import ActivityService
 
 from .repository import SubmissionRepository
 from .schema import (
@@ -27,13 +25,10 @@ def get_submission_service(
     session: Session = Depends(get_session)
 ) -> SubmissionService:
     repository = SubmissionRepository(session)
-    activity_repository = ActivityRepository(session)
-    activity_service = ActivityService(activity_repository)
 
     return SubmissionService(
         repository=repository,
         session=session,
-        activity_service=activity_service,
     )
 
 

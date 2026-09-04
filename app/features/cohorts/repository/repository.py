@@ -21,9 +21,6 @@ class CohortRepository:
         admin_id: int,
     ) -> Cohort:
 
-        if cohort_data.is_open:
-            self.close_all_open_cohorts()
-
         cohort = Cohort(
             **cohort_data.model_dump(),
             created_by=admin_id,
@@ -101,37 +98,3 @@ class CohortRepository:
         self.session.commit()
 
         return True
-
-    def get_current_cohort(self) -> Cohort | None:
-        statement = (
-            select(Cohort)
-            .where(Cohort.is_open == True)
-            .order_by(Cohort.id.desc())
-        )
-
-        return self.session.exec(statement).first()
-
-    def close_other_cohorts(self, cohort_id: int):
-        statement = select(Cohort).where(
-            Cohort.id != cohort_id,
-            Cohort.is_open == True,
-        )
-
-        cohorts = self.session.exec(statement).all()
-
-        for cohort in cohorts:
-            cohort.is_open = False
-            cohort.updated_at = datetime.now(timezone.utc)
-            self.session.add(cohort)
-
-    def close_all_open_cohorts(self):
-        statement = select(Cohort).where(
-            Cohort.is_open == True,
-        )
-
-        cohorts = self.session.exec(statement).all()
-
-        for cohort in cohorts:
-            cohort.is_open = False
-            cohort.updated_at = datetime.now(timezone.utc)
-            self.session.add(cohort)

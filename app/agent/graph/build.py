@@ -45,7 +45,6 @@ from app.agent.graph.nodes import (
     make_confidence_gate_node,
     make_no_context_node,
     make_reason_node,
-    make_retrieval_error_node,
     make_retrieve_node,
     make_route_node,
 )
@@ -54,12 +53,9 @@ from app.agent.graph.state import AgentState, QueryType
 __all__ = ["AgentDependencies", "build_agent_graph"]
 
 
-def _route_after_retrieve(state: AgentState) -> str:
-    """Conditional-edge router: decides what `retrieve` found — a genuine
-    infrastructure failure, nothing usable, or enough to reason over."""
-    if state.get("retrieval_failed"):
-        return "retrieval_error"
-
+def _has_usable_context(state: AgentState) -> str:
+    """Conditional-edge router: decides whether `retrieve` found enough to
+    reason over, or whether the graph should skip straight to escalation."""
     has_chunks = bool(state.get("retrieved_chunks"))
     has_brief = (
         state.get("query_type") == QueryType.ASSIGNMENT_GUIDANCE
@@ -85,23 +81,17 @@ def build_agent_graph(deps: AgentDependencies):
     graph.add_node("reason", make_reason_node(deps))
     graph.add_node("confidence_gate", make_confidence_gate_node())
     graph.add_node("no_context", make_no_context_node())
-    graph.add_node("retrieval_error", make_retrieval_error_node())
     graph.add_node("route", make_route_node(deps))
 
     graph.set_entry_point("retrieve")
     graph.add_conditional_edges(
         "retrieve",
-        _route_after_retrieve,
-        {
-            "reason": "reason",
-            "no_context": "no_context",
-            "retrieval_error": "retrieval_error",
-        },
+        _has_usable_context,
+        {"reason": "reason", "no_context": "no_context"},
     )
     graph.add_edge("reason", "confidence_gate")
     graph.add_edge("confidence_gate", "route")
     graph.add_edge("no_context", "route")
-    graph.add_edge("retrieval_error", "route")
     graph.add_edge("route", END)
 
     return graph.compile()

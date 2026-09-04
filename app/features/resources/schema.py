@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.features.resources.model import ResourceType
+
 
 class ResourceCreate(BaseModel):
     title: str = Field(
@@ -11,12 +13,9 @@ class ResourceCreate(BaseModel):
 
     description: str | None = None
 
-    type: str = Field(
-        min_length=1,
-        max_length=100,
-    )
+    type: ResourceType
 
-    url: str | None = None
+    url: str
 
 
 class ResourceUpdate(BaseModel):
@@ -28,11 +27,7 @@ class ResourceUpdate(BaseModel):
 
     description: str | None = None
 
-    type: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
+    type: ResourceType | None = None
 
     url: str | None = None
 
@@ -44,8 +39,8 @@ class ResourceResponse(BaseModel):
     module_id: int
     title: str
     description: str | None
-    type: str
-    url: str | None
+    type: ResourceType
+    url: str
     created_by: int
     created_at: datetime
     updated_at: datetime

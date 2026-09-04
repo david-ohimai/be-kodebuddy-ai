@@ -1,24 +1,15 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, UniqueConstraint
 from sqlmodel import SQLModel, Field
+from sqlalchemy import UniqueConstraint
 
 class Course(SQLModel, table=True):
     __tablename__ = "courses"
-
-    __table_args__ = (
-        UniqueConstraint(
-            "cohort_id",
-            "title",
-            name="uq_course_cohort_title",
-        ),
-    )
 
     id: int | None = Field(default=None, primary_key=True)
 
     title: str = Field(max_length=255)
     description: str | None = None
-    level: str | None = Field(default=None, max_length=50,)
-    
+
   # Cohort this course belongs to
     cohort_id: int = Field(
         foreign_key="cohorts.id",
@@ -34,13 +25,11 @@ class Course(SQLModel, table=True):
     is_active: bool = Field(default=True)
 
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=lambda: datetime.now(timezone.utc)
     )
 
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=lambda: datetime.now(timezone.utc)
     )
 
 
@@ -79,8 +68,9 @@ class CourseLearner(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint(
+            "course_id",
             "learner_id",
-            name="uq_course_learner_one_course",
+            name="uq_course_learner",
         ),
     )
 

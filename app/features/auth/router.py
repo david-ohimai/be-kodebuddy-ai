@@ -4,8 +4,6 @@ from sqlmodel import Session
 from app.core.session import get_session
 from app.features.auth.login_service import forgot_password_service, login_user, refresh_access_token, reset_password_service
 from app.features.profile.schema import UserResponse
-from app.features.cohorts.repository.repository import CohortRepository
-from app.features.cohorts.repository.cohort_assign_repo import CohortAssignRepository
 
 from .repository import AuthRepository
 from .schema import (
@@ -31,15 +29,9 @@ router = APIRouter(
 def get_auth_service(
     session: Session = Depends(get_session),
 ) -> AuthService:
-    auth_repository = AuthRepository(session)
-    cohort_repository = CohortRepository(session)
-    cohort_assign_repository = CohortAssignRepository(session)
+    repository = AuthRepository(session)
 
-    return AuthService(
-        repository=auth_repository,
-        cohort_repository=cohort_repository,
-        cohort_assign_repository=cohort_assign_repository,
-    )
+    return AuthService(repository)
 
 
 @router.post(

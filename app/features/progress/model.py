@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime
 from sqlmodel import SQLModel, Field, UniqueConstraint
 
 from app.features.lessons.model import Lesson  # noqa: F401 — needed so SQLAlchemy registers this table for the FK below
@@ -22,7 +21,4 @@ class UserProgress(SQLModel, table=True):
     lesson_id: int = Field(foreign_key="lessons.id", index=True)
 
     is_completed: bool = Field(default=False, index=True)
-    completed_at: datetime | None = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True), nullable=True),
-    )
+    completed_at: datetime | None = None

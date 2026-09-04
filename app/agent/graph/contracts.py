@@ -45,15 +45,7 @@ class SearchCurriculumFn(Protocol):
 
 
 class SearchFaqsFn(Protocol):
-    """Dev B: same index as curriculum search, filtered to FAQ content type.
-
-    `course_id` is optional in Dev B's shipped implementation — when
-    omitted, it searches FAQs across every course the caller's learner is
-    enrolled in (RBAC is still enforced regardless). Dev C's graph always
-    passes `course_id` explicitly, so this doesn't change graph behaviour;
-    documented here for accuracy against what's actually deployed. Can
-    raise `AgentRetrievalError` — see SearchCurriculumFn.
-    """
+    """Dev B: same index as curriculum search, filtered to FAQ content type."""
 
     def __call__(
         self, *, query: str, course_id: int

@@ -1,6 +1,15 @@
 from datetime import datetime, timezone
+from enum import Enum
 
 from sqlmodel import Field, SQLModel
+
+
+class ResourceType(str, Enum):
+    LINK = "link"
+    PDF = "pdf"
+    GITHUB_REPO = "github_repo"
+    VIDEO = "video"
+
 
 class Resource(SQLModel, table=True):
     __tablename__ = "resources"
@@ -21,11 +30,9 @@ class Resource(SQLModel, table=True):
 
     description: str | None = None
 
-    type: str = Field(
-        max_length=100,
-    )
+    type: ResourceType
 
-    url: str | None = None
+    url: str
 
     created_by: int = Field(
         foreign_key="users.id",

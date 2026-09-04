@@ -8,19 +8,14 @@ from app.features.assignments.model import Assignment
 from app.features.courses.model import CourseTrainer, CourseLearner
 from app.features.modules.model import Module
 
-from app.features.activity.model import ActivityType
-from app.features.activity.repository import ActivityRepository
-from app.features.activity.service import ActivityService
-
 from .model import Submission
 from .repository import SubmissionRepository
 from .schema import GradeSubmission, SubmissionCreate, SubmissionUpdate
 
 class SubmissionService:
-    def __init__(self, repository: SubmissionRepository, session: Session, activity_service: ActivityService):
+    def __init__(self, repository: SubmissionRepository, session: Session):
         self.repository = repository
         self.session = session
-        self.activity_service = activity_service
 
     # ---------- AUTHORIZATION HELPERS ----------
     def _get_assignment(
@@ -172,16 +167,8 @@ class SubmissionService:
             "content": data.content,
         }
 
-        submission = self.repository.create_submission(submission_data)
-
-        self.activity_service.record(
-            user_id=learner.id,
-            activity_type=ActivityType.ASSIGNMENT_SUBMITTED,
-            title="Assignment submitted",
-            description=f"Assignment {assignment.title} was submitted.",
-        )
-
-        return submission
+        return self.repository.create_submission(submission_data)
+    
 
     def get_submission_by_id(self, submission_id: int,current_user: User) -> Submission:
        
@@ -426,13 +413,6 @@ class SubmissionService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Submission not found.",
             )
-
-        self.activity_service.record(
-            user_id=submission.learner_id,
-            activity_type=ActivityType.ASSIGNMENT_GRADED,
-            title="Assignment graded",
-            description=f"Assignment {assignment.title} has been graded.",
-        )
 
         return graded_submission
 

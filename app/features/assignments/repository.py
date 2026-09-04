@@ -7,7 +7,6 @@ from app.features.assignments.schema import (
     AssignmentCreate,
     AssignmentUpdate,
 )
-from app.features.auth.model import User
 
 
 class AssignmentRepository:
@@ -49,8 +48,6 @@ class AssignmentRepository:
                 Assignment.module_id == module_id
             )
 
-        statement = statement.order_by(Assignment.due_date)
-
         return list(self.db.exec(statement).all())
 
     def get_assignment_by_id(
@@ -66,15 +63,6 @@ class AssignmentRepository:
         )
 
         return self.db.exec(statement).first()
-
-    def get_creator_name(self, created_by: int) -> str | None:
-
-        user = self.db.get(User,created_by)
-
-        if user is None:
-            return None
-
-        return user.full_name or user.email
 
     def update(
         self,
