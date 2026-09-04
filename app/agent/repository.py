@@ -55,15 +55,19 @@ that needs to change.
     visible — a mis-ingested row fails closed, not open.
 
     escalations
-        id          integer primary key
-        learner_id  integer not null  -> users.id
-        course_id   integer not null  -> courses.id
-        trainer_id  integer null      -> users.id
-        question    text not null
-        reason      text not null     -- an EscalationReason value
-        detail      text null         -- free-form context for the reason
-        status      text not null     -- 'open' on insert
-        created_at  timestamptz not null
+        id                integer primary key
+        learner_id        integer not null  -> users.id
+        course_id         integer not null  -> courses.id
+        module_id         integer null      -> modules.id
+        assignment_id     integer null      -> assignments.id
+        trainer_id        integer null      -> users.id
+        question          text not null
+        reason            text not null     -- an EscalationReason value
+        detail            text null         -- free-form context for the reason
+        draft_response    text null         -- agent's own best-effort answer, if any/safe
+        confidence_score  float null        -- graph's confidence_score for that draft
+        status            text not null     -- 'open' on insert
+        created_at        timestamptz not null
 
     NOTE FOR DEV A: `trainer_id` and `detail` are additions since the first
     draft of this contract, and come from Dev C's `EscalateToTrainerFn` in
@@ -72,6 +76,14 @@ that needs to change.
     NULLABLE: the graph deliberately escalates even when that lookup failed,
     rather than dropping the learner's question, and those rows are the
     unassigned-escalations queue.
+
+    NOTE: `module_id`, `assignment_id`, `draft_response`, `confidence_score`
+    (migration a1c2e3f4b5d6) are later additions, added once it became clear
+    a trainer looking at an escalation with only `question`/`reason` had no
+    way to tell what the agent actually attempted or which part of the
+    course it came from. All four are nullable and populated from whatever
+    the frontend already had on the originating chat turn -- no learner
+    ever re-types this data.
 """
 
 from __future__ import annotations
@@ -488,7 +500,11 @@ class AgentRepository:
         question: str,
         reason: EscalationReason,
         trainer_id: int | None = None,
+        module_id: int | None = None,
+        assignment_id: int | None = None,
         detail: str | None = None,
+        draft_response: str | None = None,
+        confidence_score: float | None = None,
     ) -> int:
         """
         Persist an escalation for the trainer dashboard and return its id.
@@ -505,7 +521,21 @@ class AgentRepository:
             trainer_id: resolved upstream by Dev D. None is valid and lands the
                 row in the unassigned queue — never a reason to refuse the
                 write, since a dropped escalation strands the learner.
+            module_id: the module the question was asked in, if any --
+                round-tripped from the originating chat turn so the trainer
+                can jump straight to the relevant content instead of only
+                knowing the course.
+            assignment_id: the assignment the question was asked about, if
+                any -- same rationale as module_id, populated only for
+                ASSIGNMENT_GUIDANCE turns.
             detail: free-form context for the reason (e.g. the top score).
+            draft_response: the agent's own best-effort answer, if it had
+                one and it was safe to surface (never populated for a
+                POLICY_VIOLATION reason -- see
+                app/agent/graph/nodes.py::route). Gives the trainer
+                something concrete to react to, not just a bare question.
+            confidence_score: the graph's confidence_score (0.0-1.0) for
+                that draft, if any.
 
         Raises:
             EscalationWriteError: if the row could not be written.
@@ -531,18 +561,28 @@ class AgentRepository:
         # caused every escalation write to fail with a NotNullViolation,
         # rolled back and reported to the caller as a generic 500 with no
         # detail (see EscalationWriteError handling in router.py).
+        #
+        # module_id/assignment_id/draft_response/confidence_score are all
+        # nullable (migration a1c2e3f4b5d6) -- a caller that doesn't have
+        # one (e.g. an older frontend build, or a CHAT turn with no
+        # module_id) simply gets NULL there rather than a failed write.
         statement = text(
             f"""
             INSERT INTO {ESCALATIONS_TABLE}
-                (learner_id, course_id, trainer_id, question,
-                 reason, detail, status, created_at, updated_at)
+                (learner_id, course_id, module_id, assignment_id, trainer_id,
+                 question, reason, detail, draft_response, confidence_score,
+                 status, created_at, updated_at)
             VALUES
                 (CAST(:learner_id AS INTEGER),
                  CAST(:course_id AS INTEGER),
+                 CAST(:module_id AS INTEGER),
+                 CAST(:assignment_id AS INTEGER),
                  CAST(:trainer_id AS INTEGER),
                  :question,
                  CAST(:reason AS escalationreason),
                  :detail,
+                 :draft_response,
+                 CAST(:confidence_score AS FLOAT),
                  :status,
                  NOW(), NOW())
             RETURNING id
@@ -555,12 +595,26 @@ class AgentRepository:
                 {
                     "learner_id": self.learner_id,
                     "course_id": int(course_id),
+                    "module_id": (
+                        int(module_id) if module_id is not None else None
+                    ),
+                    "assignment_id": (
+                        int(assignment_id) if assignment_id is not None else None
+                    ),
                     "trainer_id": (
                         int(trainer_id) if trainer_id is not None else None
                     ),
                     "question": question.strip(),
                     "reason": reason_value,
                     "detail": detail.strip() if detail else None,
+                    "draft_response": (
+                        draft_response.strip() if draft_response else None
+                    ),
+                    "confidence_score": (
+                        float(confidence_score)
+                        if confidence_score is not None
+                        else None
+                    ),
                     "status": ESCALATION_STATUS_OPEN,
                 },
             ).first()
@@ -584,10 +638,13 @@ class AgentRepository:
 
         escalation_id = int(row[0])
         logger.info(
-            "Escalation %s created for learner=%s course=%s trainer=%s reason=%s",
+            "Escalation %s created for learner=%s course=%s module=%s "
+            "assignment=%s trainer=%s reason=%s",
             escalation_id,
             self.learner_id,
             course_id,
+            module_id if module_id is not None else "n/a",
+            assignment_id if assignment_id is not None else "n/a",
             trainer_id if trainer_id is not None else "unassigned",
             reason_value,
         )
