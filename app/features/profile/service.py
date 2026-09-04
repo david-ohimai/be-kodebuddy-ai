@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.email import send_role_change_email
-from app.features.auth.model import User
+from app.features.auth.model import User, UserRole
 from app.features.courses.repository import CourseRepository
 from app.features.profile.schema import (
     ProfilePictureResponse,
@@ -37,20 +37,26 @@ class ProfileService:
         user: User,
     ) -> UserDto:
 
-        cohort = self.course_repository.get_learner_cohort(
-            user.id
-        )
-
-        course_assignment = self.course_repository.get_learner_assignment(
-            user.id
-        )
-
+        cohort = None 
         course = None
 
-        if course_assignment:
-            course = self.course_repository.get_by_id(
-                course_assignment.course_id
-            )
+        # ---------------- LEARNER ----------------
+
+        if user.role == UserRole.LEARNER: 
+            cohort = self.repository.get_learner_cohort( user.id ) 
+            course = self.repository.get_learner_course( user.id )
+
+        # ---------------- TRAINER ----------------
+
+        if user.role == UserRole.TRAINER:
+            cohort = self.repository.get_trainer_cohort( user.id )
+            course = self.repository.get_trainer_course( user.id )
+
+        # ---------------- MENTOR ----------------
+
+        elif user.role == UserRole.MENTOR:
+            cohort = None 
+            course = None     
 
         return UserDto(
             id=user.id,
