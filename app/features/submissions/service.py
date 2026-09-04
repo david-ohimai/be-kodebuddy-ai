@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
 
 from app.features.auth.model import User, UserRole
 from app.features.assignments.model import Assignment
@@ -165,14 +166,20 @@ class SubmissionService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="You have already submitted this assignment.",
             )
-        
+
         submission_data = {
             "assignment_id": data.assignment_id,
             "learner_id": learner.id,
             "content": data.content,
         }
 
-        submission = self.repository.create_submission(submission_data)
+        try:
+            submission = self.repository.create_submission(submission_data)
+        except IntegrityError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have already submitted this assignment.",
+            )
 
         self.activity_service.record(
             user_id=learner.id,
@@ -183,8 +190,8 @@ class SubmissionService:
 
         return submission
 
-    def get_submission_by_id(self, submission_id: int,current_user: User) -> Submission:
-       
+    def get_submission_by_id(self, submission_id: int, current_user: User) -> Submission:
+
         submission = self.repository.get_submission_by_id(
             submission_id
         )
@@ -212,11 +219,10 @@ class SubmissionService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    
                     "Mentor submission access is not "
                     "available until mentor-learner relationships "
                     "are implemented."
-                ), 
+                ),
             )
 
         # Learner can only view own submission
@@ -227,13 +233,13 @@ class SubmissionService:
                     detail="You are not authorized to view this submission.",
                 )
             return submission
-        
+
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not authorized to view this submission.",
         )
 
-   
+
     def get_my_submissions(
         self,
         learner: User,
@@ -254,7 +260,7 @@ class SubmissionService:
             learner.id
         )
 
- 
+
     def get_assignment_submissions(
         self,
         assignment_id: int,
@@ -287,7 +293,7 @@ class SubmissionService:
                     "Mentor Mentor submission access is not available until mentor-learner relationships are implemented"
                 ),
             )
-        
+
         raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Learners cannot view other learners' submissions.",
@@ -306,7 +312,7 @@ class SubmissionService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only learners can update submissions.",
             )
-      
+
         submission = self.repository.get_submission_by_id(
             submission_id
         )
@@ -347,7 +353,7 @@ class SubmissionService:
 
         return updated_submission
 
-  
+
     def grade_submission(
         self,
         submission_id: int,
@@ -386,7 +392,7 @@ class SubmissionService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Mentors cannot grade submissions.",
             )
-        
+
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -408,7 +414,7 @@ class SubmissionService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Grader identity is required to grade submissions.",
             )
-        
+
         update_data = {
             "score": data.score,
             "feedback": data.feedback,
@@ -436,13 +442,13 @@ class SubmissionService:
 
         return graded_submission
 
-  
+
     def delete_submission(
         self,
         submission_id: int,
         current_user: User,
     ) -> bool:
-      
+
         if current_user.role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -460,3 +466,4 @@ class SubmissionService:
             )
 
         return True
+    
