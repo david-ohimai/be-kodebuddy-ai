@@ -278,8 +278,18 @@ class CourseService:
             )
        
         # Learner has no course yet.
-        return CourseResponse(**course.model_dump(), is_selected=True,)
-
+        return CourseResponse(
+            id=course.id,
+            title=course.title,
+            description=course.description,
+            level=course.level,
+            cohort_id=course.cohort_id,
+            created_by=course.created_by,
+            is_active=course.is_active,
+            is_selected=True,
+            created_at=course.created_at,
+            updated_at=course.updated_at,
+        )
     # ---------- VIEW COURSES ----------
 
     def get_courses(self, current_user: User)-> list[CourseResponse]:
