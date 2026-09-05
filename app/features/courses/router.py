@@ -100,13 +100,9 @@ def assign_learner(
     service: CourseService = Depends(get_course_service),
 ):
 
-    assignment = service.assign_learner(
+    course  = service.assign_learner(
         course_id=course_id,
         learner_id=data.learner_id,
-    )
-
-    course = service.get_course_for_admin(
-        assignment.course_id
     )
 
 

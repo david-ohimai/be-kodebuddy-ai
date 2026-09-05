@@ -74,6 +74,12 @@ class CourseService:
         if "title" in update_data and update_data["title"] is not None:
             new_title = update_data["title"].strip()
 
+            if not new_title: 
+                raise HTTPException( 
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail="Course title cannot be empty.", 
+                )
+
             existing_course = self.repository.get_by_cohort_and_title(
                 cohort_id=course.cohort_id,
                 title=new_title,
@@ -101,6 +107,7 @@ class CourseService:
     def delete_course(self, course_id: int):
         course = self.get_course_for_admin(course_id)
         self.repository.delete(course)
+        return { "message": "Course deleted successfully", }
 
     # ---------- TRAINER ASSIGNMENT ----------
     def assign_trainer(
@@ -217,7 +224,7 @@ class CourseService:
         self,
         course_id: int,
         learner_id: int,
-    ):
+    ) -> CourseResponse:
         
         course = self.repository.get_by_id(course_id)
 
@@ -258,21 +265,24 @@ class CourseService:
                     detail="Learner is already assigned to this course.",
                 )
             
-            return self.repository.replace_learner_assignment(
+            self.repository.replace_learner_assignment(
                 existing_assignment=existing_assignment,
+                course_id=course_id,
+                learner_id=learner_id,
+            )
+
+        else:
+            self.repository.assign_learner(
                 course_id=course_id,
                 learner_id=learner_id,
             )
        
         # Learner has no course yet.
-        return self.repository.assign_learner(
-            course_id=course_id,
-            learner_id=learner_id,
-        )
+        return CourseResponse(**course.model_dump(), is_selected=True,)
 
     # ---------- VIEW COURSES ----------
 
-    def get_courses(self, current_user: User):
+    def get_courses(self, current_user: User)-> list[CourseResponse]:
 
         if current_user.role == UserRole.ADMIN:
             courses = self.repository.get_all()
@@ -291,30 +301,29 @@ class CourseService:
             ]
 
         if current_user.role == UserRole.LEARNER:
-            assigned_course = self.repository.get_learner_course(
-                    current_user.id
-                )
-
-            if assigned_course is not None:
-                return [
-                    CourseResponse(
-                        **assigned_course.model_dump(),
-                        is_selected=True,
-                    )
-                ]
-
-            current_cohort = self.cohort_repository.get_current_cohort()
+            current_cohort = self.cohort_repository.get_current_cohort() 
 
             if current_cohort is None:
-                return []
+                return [] 
 
             available_courses = (
                 self.repository.get_active_courses_by_cohort(
                     current_cohort.id
                 )
-            )
+            )   
 
-            return [CourseResponse( **course.model_dump(), is_selected=False,)
+            assigned_course = self.repository.get_learner_course(
+                    current_user.id
+                )
+
+            return [
+                CourseResponse(
+                    **course.model_dump(), 
+                    is_selected=(
+                        assigned_course is not None
+                        and course.id == assigned_course.id
+                    ),
+                )
                 for course in available_courses]
         
         return []
@@ -323,7 +332,7 @@ class CourseService:
         self,
         course_id: int,
         current_user: User,
-    ) -> Course:
+    ) -> CourseResponse:
 
         course = self.repository.get_by_id(course_id)
 
@@ -334,7 +343,7 @@ class CourseService:
             )
 
         if current_user.role == UserRole.ADMIN:
-            return course
+            return CourseResponse(**course.model_dump(), is_selected=False,)
 
         if current_user.role == UserRole.TRAINER:
 
@@ -349,13 +358,13 @@ class CourseService:
                     detail="You cannot access another trainer's course.",
                 )
 
-            return course
+            return CourseResponse(**course.model_dump(), is_selected=False,)            
 
         if current_user.role == UserRole.LEARNER:
 
             has_access = self.repository.learner_has_access(
-                    learner_id=current_user.id,
-                    course_id=course.id,
+                learner_id=current_user.id,
+                course_id=course.id,
             )
 
             if not has_access:
@@ -366,7 +375,7 @@ class CourseService:
                     ),
                 )
 
-            return course
+            return CourseResponse(**course.model_dump(), is_selected=True,)            
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
