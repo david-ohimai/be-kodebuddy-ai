@@ -404,3 +404,4 @@ class CourseService:
             )
 
         return course
+    
