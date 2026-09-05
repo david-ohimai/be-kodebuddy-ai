@@ -41,6 +41,26 @@ class Escalation(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     learner_id: int = Field(foreign_key="users.id", index=True)
     course_id: int = Field(foreign_key="courses.id", index=True)
+    # Nullable, unlike ConversationHistory.module_id's rationale below: a
+    # CHAT-type escalation isn't necessarily scoped to one module, and an
+    # ASSIGNMENT_GUIDANCE-type escalation carries module_id derived from the
+    # assignment. Populated by the frontend at escalate-time from whatever
+    # module_id/assignment_id it already had on the originating chat turn
+    # (POST /agent/chat's MessageRequest) — round-tripped rather than
+    # re-derived, so the trainer sees exactly the context the learner was
+    # actually in, not a best-guess reconstruction.
+    module_id: Optional[int] = Field(
+        default=None,
+        foreign_key="modules.id",
+        index=True,
+        nullable=True,
+    )
+    assignment_id: Optional[int] = Field(
+        default=None,
+        foreign_key="assignments.id",
+        index=True,
+        nullable=True,
+    )
     trainer_id: Optional[int] = Field(
         default=None,
         foreign_key="users.id",
@@ -58,7 +78,34 @@ class Escalation(SQLModel, table=True):
             nullable=False,
         )
     )
+    # Free-form context for `reason` -- either the graph's own
+    # `escalation_detail` (e.g. "Top retrieval score 0.410 did not clear the
+    # confidence bar."), forwarded verbatim by the frontend from
+    # AgentTurnResponse.escalation_detail, or the learner's own added note.
+    # Kept distinct from `draft_response` below: this explains *why* the
+    # agent wasn't confident; draft_response is *what it attempted*.
     detail: Optional[str] = Field(default=None, nullable=True)
+    # The agent's own best-effort/draft answer for this question, if it
+    # produced one and it was safe to surface (see
+    # app/agent/graph/nodes.py::make_route_node -- never populated when the
+    # draft itself violated the "guide, don't solve" policy). Gives the
+    # trainer something concrete to react to or correct, instead of only a
+    # bare question + reason code.
+    draft_response: Optional[str] = Field(default=None, nullable=True)
+    # The graph's own confidence_score (0.0-1.0) for that draft, so the
+    # trainer can tell "the agent was close but not quite sure" apart from
+    # "the agent had nothing to go on", without re-deriving it from `reason`.
+    confidence_score: Optional[float] = Field(default=None, nullable=True)
+    # The trainer's reply to this escalation, kept on its own column instead
+    # of being appended into `detail` -- `detail` stays the agent's field
+    # (why it wasn't confident); this is the trainer's answer to the
+    # learner's question, a different thing written at a different time by
+    # a different actor. Nullable: unset until a trainer responds.
+    response: Optional[str] = Field(default=None, nullable=True)
+    # When `response` was last written. Nullable until a trainer responds;
+    # overwritten (not appended) on every subsequent PATCH, so it always
+    # reflects the most recent reply.
+    responded_at: Optional[datetime] = Field(default=None, nullable=True)
     status: str = Field(default="open", max_length=50, index=True)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)

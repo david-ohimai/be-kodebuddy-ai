@@ -38,18 +38,14 @@ from sqlmodel import Session, select
 from app.agent.graph.nodes import AgentDependencies
 from app.agent.graph.state import AgentState, ChatTurn, QueryType
 from app.agent.graph.utils import chunk_score, get_field
-from app.agent.llm import (
-    AnthropicLLMClient,
-    FallbackLLMClient,
-    GeminiLLMClient,
-    GroqLLMClient,
-    OpenRouterLLMClient,
-)
 from app.agent.repository import ConversationHistoryRepository, QueryLogRepository
 from app.agent.tools.factory import AgentTools
 from app.agent.tracing import build_traced_agent_graph
-from app.core.config import AGENT_LLM_FALLBACK_MODEL, AGENT_MAX_HISTORY_TURNS
+from app.agent.llm import FallbackLLMClient, GeminiLLMClient, OpenRouterLLMClient
 from app.features.courses.model import CourseTrainer
+from app.features.notifications.repository import NotificationRepository
+from app.features.notifications.service import NotificationService
+from app.core.config import AGENT_MAX_HISTORY_TURNS
 
 logger = logging.getLogger("kodebuddy.agent.service")
 
@@ -77,9 +73,6 @@ logger = logging.getLogger("kodebuddy.agent.service")
 # messages. Fine for now; worth widening router.py's exception handling
 # if this chain order stays for production rather than just this demo.
 _llm_client = FallbackLLMClient([
-    AnthropicLLMClient(),
-    AnthropicLLMClient(model=AGENT_LLM_FALLBACK_MODEL),
-    GroqLLMClient(),
     GeminiLLMClient(),
     OpenRouterLLMClient(),
 ])
@@ -109,12 +102,31 @@ class NotEnrolledError(Exception):
 class AgentTurnResult:
     """Service-layer result, converted to schema.AgentTurnResponse in
     router.py. A plain dataclass (not the pydantic response model itself) so
-    this module stays independent of the API schema's exact shape."""
+    this module stays independent of the API schema's exact shape.
+
+    `escalated` vs `escalation_available`: `route` (nodes.py) no longer
+    writes an escalation row itself, so `escalated` is always False coming
+    out of a graph-driven turn today -- it's kept as a field (rather than
+    dropped) because it still reflects a real write if one ever happens
+    on this path in the future, and because schema.AgentTurnResponse
+    exposes it as part of its stable contract. `escalation_available` is
+    the field the frontend should actually branch on to decide whether to
+    show an "Escalate to trainer" button; `escalation_reason` is the
+    structured category, `escalation_detail` the human-readable why, and
+    `draft_response` the agent's own (sanitized) best-effort answer -- all
+    three meant to be forwarded as-is on POST /agent/escalate so the
+    resulting row gives the trainer real context instead of a bare
+    question + reason code.
+    """
 
     answer: str
     query_type: str
     escalated: bool
     escalation_id: int | None
+    escalation_available: bool
+    escalation_reason: str | None
+    escalation_detail: str | None
+    draft_response: str | None
     confidence_score: float
 
 
@@ -197,6 +209,58 @@ def record_interaction(
         latency_ms=latency_ms,
     )
 
+    # NOTE (previously a bugfix for the graph's own auto-escalation path):
+    # `route` (app/agent/graph/nodes.py) used to write the escalation row
+    # itself whenever a turn wasn't confident enough, and this block existed
+    # to make sure that write also triggered notify_escalation_created --
+    # otherwise a trainer would only ever find the row by manually browsing
+    # the escalations dashboard.
+    #
+    # `route` no longer writes escalations at all (see its docstring): it
+    # only sets `escalation_available`/`escalation_reason` so the frontend
+    # can offer the learner a button, and the actual write + notification
+    # now happen exclusively inside the learner-triggered
+    # `POST /agent/escalate` endpoint (router.py::create_escalation), which
+    # already calls notify_escalation_created itself.
+    #
+    # Practically, `state.get("escalated")` is therefore never True coming
+    # out of a normal graph-driven turn today, so this block is currently
+    # inert for POST /agent/chat and POST /agent/assignment-guidance. It's
+    # kept (rather than deleted) purely as a safety net: if some future
+    # graph path (e.g. an EXPLICIT_USER_REQUEST auto-escalation) ever does
+    # set `escalated=True` directly on state again, the notification still
+    # fires correctly without anyone having to remember to re-add this.
+    #
+    # Wrapped in try/except and logged rather than raised: were this ever to
+    # fire, the escalation row would already be committed by that point, and
+    # a notification-table write failure (e.g. a bad trainer_id, a
+    # notifications-table outage) must not turn an already-successful
+    # escalation into a 500 for the learner, nor roll back a record that a
+    # trainer may still find by other means (dashboard, direct query).
+    if state.get("escalated") and state.get("escalation_id") is not None:
+        try:
+            NotificationService(NotificationRepository(session)).notify_escalation_created(
+                learner_id=learner_id,
+                trainer_id=state.get("trainer_id"),
+                escalation_id=state["escalation_id"],
+                course_id=course_id,
+                reason=(
+                    escalation_reason.value
+                    if hasattr(escalation_reason, "value")
+                    else str(escalation_reason)
+                ),
+            )
+        except Exception:  # noqa: BLE001 -- see comment above
+            logger.exception(
+                "Failed to notify trainer=%s of escalation_id=%s for "
+                "learner=%s course=%s -- the escalation row itself was "
+                "already committed and is not affected.",
+                state.get("trainer_id"),
+                state["escalation_id"],
+                learner_id,
+                course_id,
+            )
+
 
 def _resolve_trainer_id(session: Session, course_id: int) -> int | None:
     """
@@ -205,9 +269,13 @@ def _resolve_trainer_id(session: Session, course_id: int) -> int | None:
     A course can have more than one CourseTrainer row (no uniqueness
     constraint on course_id alone -- see app/features/courses/model.py). This
     picks the lowest-id match deterministically. Returns None if no trainer
-    is assigned, which is not an error: Dev C's route node still escalates
-    with trainer_id=None, and Dev B's escalate_to_trainer routes that to the
-    unassigned-escalations queue rather than dropping the question.
+    is assigned, which is not an error: `route` (nodes.py) no longer writes
+    escalations itself, but this value still flows into AgentState.trainer_id
+    for display/telemetry purposes, and router.py's own POST /agent/escalate
+    handler re-resolves trainer_id independently at write time, where None
+    is likewise valid -- Dev B's escalate_to_trainer/create_escalation route
+    a None trainer_id to the unassigned-escalations queue rather than
+    dropping the question.
     """
     rows = session.exec(
         select(CourseTrainer)
@@ -289,13 +357,16 @@ def _run_turn(
         latency_ms=latency_ms,
     )
 
+    escalation_reason = result_state.get("escalation_reason")
+
     logger.info(
         "agent turn: learner=%s course=%s query_type=%s escalated=%s "
-        "latency_ms=%d",
+        "escalation_available=%s latency_ms=%d",
         learner_id,
         course_id,
         query_type.value,
         result_state.get("escalated", False),
+        result_state.get("escalation_available", False),
         latency_ms,
     )
 
@@ -304,6 +375,14 @@ def _run_turn(
         query_type=query_type.value,
         escalated=bool(result_state.get("escalated", False)),
         escalation_id=result_state.get("escalation_id"),
+        escalation_available=bool(result_state.get("escalation_available", False)),
+        escalation_reason=(
+            escalation_reason.value
+            if hasattr(escalation_reason, "value")
+            else escalation_reason
+        ),
+        escalation_detail=result_state.get("escalation_detail"),
+        draft_response=result_state.get("draft_response") or "",
         confidence_score=float(result_state.get("confidence_score", 0.0)),
     )
 

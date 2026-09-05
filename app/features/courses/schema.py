@@ -31,6 +31,7 @@ class CourseResponse(BaseModel):
     cohort_id: int
     created_by: int
     is_active: bool
+    is_selected: bool
     created_at: datetime
     updated_at: datetime
 

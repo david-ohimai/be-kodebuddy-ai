@@ -43,39 +43,6 @@ class CohortResponse(CohortBase):
     )
 
 
-
-# 
-# ====Assigning of cohorts to trainers
-
-
-class AssignLearnerRequest(BaseModel):
-    learner_id: int
-
-
-class AssignTrainerRequest(BaseModel):
-    trainer_id: int
-
-
-class CohortLearnerResponse(BaseModel):
-    id: int
-    cohort_id: int
-    learner_id: int
-    joined_at: datetime
-    completed_at: datetime | None
-    is_active: bool
-
-
-class CohortTrainerResponse(BaseModel):
-    id: int
-    cohort_id: int
-    trainer_id: int
-    assigned_at: datetime
-    removed_at: datetime | None
-
-from datetime import datetime
-from pydantic import BaseModel
-
-
 class AssignLearnerRequest(BaseModel):
     learner_id: int
 

@@ -8,28 +8,35 @@ Satisfies app.agent.graph.contracts.LLMClient: complete(system, user) -> str.
 This is the only place in the codebase that calls a real LLM provider for
 the chat/assignment-guidance request path. scripts/agent_tools_demo.py (Dev
 B's standalone harness) uses its own tool-calling loop and does not share
-this client -- that script exercises retrieval tools directly, not the graph.
+this client -- that script exercises retrieval tools directly, not the graph,
+and still uses the `anthropic` package independently of what's wired in here.
+
+STRUCTURED OUTPUT: nodes.py's `_parse_llm_response` expects
+{"answer": str, "uncertain": bool} back from `complete()`. Previously the
+*only* thing enforcing that shape was prose instruction #5 in the system
+prompt (prompts/chat.py / prompts/assignment_guidance.py) -- neither Gemini
+nor OpenRouter guarantees a model actually follows a "respond with only this
+JSON shape" instruction, especially under the fallback chain where a
+smaller/cheaper model may be answering. Both clients below now ask their
+provider to *enforce* the shape at generation time (Gemini's
+response_schema, OpenRouter/OpenAI's response_format json_schema) instead of
+relying on the model choosing to comply. If the specific underlying model
+doesn't support that constraint, the request is retried once without it, so
+a single unsupported model doesn't hard-fail the tier -- nodes.py's parser
+remains the last line of defence either way.
 """
 
 from __future__ import annotations
 
 import logging
-
-import anthropic
+import time
 
 from app.core.config import (
-    AGENT_LLM_FALLBACK_MODEL,
     AGENT_LLM_GEMINI_MAX_TOKENS,
     AGENT_LLM_GEMINI_MODEL,
-    AGENT_LLM_GROQ_MAX_TOKENS,
-    AGENT_LLM_GROQ_MODEL,
-    AGENT_LLM_MAX_TOKENS,
-    AGENT_LLM_MODEL,
     AGENT_LLM_OPENROUTER_MAX_TOKENS,
     AGENT_LLM_OPENROUTER_MODEL,
-    ANTHROPIC_API_KEY,
     GEMINI_API_KEY,
-    GROQ_API_KEY,
     OPENROUTER_API_KEY,
 )
 
@@ -37,48 +44,27 @@ logger = logging.getLogger("kodebuddy.agent.llm")
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-
-class AnthropicLLMClient:
-    """
-    Thin wrapper around a single-turn Anthropic completion.
-
-    No retries/backoff here on purpose: app.agent.graph.nodes.reason has no
-    concept of "the LLM call failed", only "the LLM's response didn't parse"
-    (see nodes.py::_parse_llm_response's fail-safe behaviour, which handles
-    a malformed *response*, not a raised exception). Retry-across-providers
-    behaviour lives one layer up, in FallbackLLMClient below -- this class
-    stays a plain single-call wrapper so it's still usable on its own (e.g.
-    in tests, or as one link in a fallback chain).
-
-    Also usable as a same-provider fallback tier: construct a second
-    instance with a different `model` (e.g. a smaller/cheaper model) to
-    fall back to if your primary model is rate-limited or overloaded,
-    without leaving Anthropic entirely.
-    """
-
-    def __init__(
-        self,
-        api_key: str | None = None,
-        model: str | None = None,
-        max_tokens: int | None = None,
-    ) -> None:
-        # anthropic.Anthropic() also reads ANTHROPIC_API_KEY from the
-        # environment itself, but passing it explicitly keeps this class's
-        # dependency on app.core.config visible and testable.
-        self._client = anthropic.Anthropic(api_key=api_key or ANTHROPIC_API_KEY)
-        self._model = model or AGENT_LLM_MODEL
-        self._max_tokens = max_tokens or AGENT_LLM_MAX_TOKENS
-
-    def complete(self, *, system: str, user: str) -> str:
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
+# Shared JSON Schema for the {"answer": str, "uncertain": bool} contract
+# nodes.py._parse_llm_response expects. Defined once here so both clients
+# (and anyone adding a third provider later) enforce exactly the same shape.
+_RESPONSE_JSON_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "answer": {
+            "type": "string",
+            "description": "The answer to show the learner. Plain text; light markdown is fine.",
+        },
+        "uncertain": {
+            "type": "boolean",
+            "description": (
+                "True if you are not genuinely confident this answer is "
+                "correct and fully supported by the given context."
+            ),
+        },
+    },
+    "required": ["answer", "uncertain"],
+    "additionalProperties": False,
+}
 
 
 class GeminiLLMClient:
@@ -89,9 +75,9 @@ class GeminiLLMClient:
     receives no further updates or bug fixes).
 
     Requires GEMINI_API_KEY and AGENT_LLM_GEMINI_MODEL set -- construction
-    succeeds either way (matching AnthropicLLMClient's lazy-failure style),
-    and the first real call fails with the SDK's own error if either is
-    missing/invalid.
+    succeeds either way (matching the lazy-failure style used throughout
+    this module), and the first real call fails with the SDK's own error if
+    either is missing/invalid.
     """
 
     def __init__(
@@ -107,55 +93,111 @@ class GeminiLLMClient:
         self._model = model or AGENT_LLM_GEMINI_MODEL
         self._max_tokens = max_tokens or AGENT_LLM_GEMINI_MAX_TOKENS
 
-    def complete(self, *, system: str, user: str) -> str:
-        from google.genai import types
+    # HTTP/API status codes where the *request itself* is fine and the
+    # provider just couldn't serve it a moment ago (capacity/rate-limit).
+    # These are worth a short backoff + same-config retry, never a schema
+    # downgrade -- dropping response_schema does nothing for server load.
+    _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+    _TRANSIENT_RETRY_DELAY_SECONDS = 2.0
 
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=user,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                max_output_tokens=self._max_tokens,
-            ),
+    @classmethod
+    def _is_transient(cls, exc: Exception) -> bool:
+        """
+        True for capacity/rate-limit errors (e.g. 503 UNAVAILABLE / "high
+        demand", 429 rate limit) where retrying the *same* request is the
+        right move. False for errors that are actually about this specific
+        request/config -- e.g. a 400 INVALID_ARGUMENT because this
+        model/account tier rejects response_schema -- which should be
+        retried without the schema instead, not against a timer.
+        """
+        return getattr(exc, "code", None) in cls._TRANSIENT_STATUS_CODES
+
+    def complete(self, *, system: str, user: str) -> str:
+        from google.genai import errors, types
+
+        structured_schema = types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "answer": types.Schema(type=types.Type.STRING),
+                "uncertain": types.Schema(type=types.Type.BOOLEAN),
+            },
+            required=["answer", "uncertain"],
         )
+
+        config_with_schema = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=self._max_tokens,
+            response_mime_type="application/json",
+            response_schema=structured_schema,
+        )
+        config_without_schema = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=self._max_tokens,
+        )
+
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=user,
+                config=config_with_schema,
+            )
+        except errors.APIError as exc:
+            if self._is_transient(exc):
+                # Server was overloaded / rate-limited -- it never actually
+                # evaluated response_schema, so retrying without it would
+                # fix nothing. Give it a brief moment to clear and retry
+                # the *identical* request once.
+                logger.warning(
+                    "Gemini model %s hit a transient error (%s: %s); "
+                    "retrying same request after %.1fs backoff.",
+                    self._model,
+                    type(exc).__name__,
+                    exc,
+                    self._TRANSIENT_RETRY_DELAY_SECONDS,
+                )
+                time.sleep(self._TRANSIENT_RETRY_DELAY_SECONDS)
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=user,
+                    config=config_with_schema,
+                )
+            else:
+                # A genuine config rejection -- this model/account tier
+                # doesn't support response_schema (or not combined with a
+                # system instruction). Retry once in free-text mode;
+                # nodes.py's parser still fails safe if the model doesn't
+                # comply on that attempt.
+                logger.warning(
+                    "Gemini model %s rejected structured-output config "
+                    "(%s: %s); retrying without response_schema "
+                    "enforcement.",
+                    self._model,
+                    type(exc).__name__,
+                    exc,
+                )
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=user,
+                    config=config_without_schema,
+                )
+        except Exception as exc:  # noqa: BLE001 -- non-API error (e.g.
+            # network/SDK-internal failure) with no status code to classify.
+            # Fall back to the same "drop schema and retry once" behavior
+            # as before -- nodes.py's parser remains the backstop either way.
+            logger.warning(
+                "Gemini model %s raised a non-API error (%s: %s); "
+                "retrying without response_schema enforcement.",
+                self._model,
+                type(exc).__name__,
+                exc,
+            )
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=user,
+                config=config_without_schema,
+            )
+
         return (response.text or "").strip()
-
-
-class GroqLLMClient:
-    """
-    Thin wrapper around a single-turn Groq chat completion. Groq's client
-    library mirrors the OpenAI SDK shape (chat.completions.create with
-    messages=[...]), but this is Groq's own `groq` package talking to
-    Groq's own endpoint -- useful mainly for fast/cheap inference on hosted
-    open models, as a distinct failure domain from both Anthropic and
-    Gemini.
-
-    Requires GROQ_API_KEY and AGENT_LLM_GROQ_MODEL set.
-    """
-
-    def __init__(
-        self,
-        api_key: str | None = None,
-        model: str | None = None,
-        max_tokens: int | None = None,
-    ) -> None:
-        from groq import Groq  # imported here so a missing `groq` package
-        # only breaks callers that actually construct this client.
-
-        self._client = Groq(api_key=api_key or GROQ_API_KEY)
-        self._model = model or AGENT_LLM_GROQ_MODEL
-        self._max_tokens = max_tokens or AGENT_LLM_GROQ_MAX_TOKENS
-
-    def complete(self, *, system: str, user: str) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
-        return (response.choices[0].message.content or "").strip()
 
 
 class OpenRouterLLMClient:
@@ -191,14 +233,64 @@ class OpenRouterLLMClient:
         self._max_tokens = max_tokens or AGENT_LLM_OPENROUTER_MAX_TOKENS
 
     def complete(self, *, system: str, user: str) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                max_tokens=self._max_tokens,
+                messages=messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "kodebuddy_agent_response",
+                        "strict": True,
+                        "schema": _RESPONSE_JSON_SCHEMA,
+                    },
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 -- see docstring below
+            # Not every model routed through OpenRouter supports
+            # response_format=json_schema (support depends on the specific
+            # underlying model, which is caller-configured via
+            # AGENT_LLM_OPENROUTER_MODEL and can change independently of
+            # this file). Retry once with the more broadly-supported
+            # json_object mode -- guarantees syntactically valid JSON even
+            # when it can't guarantee the exact key set -- and if even that
+            # is rejected, fall through to a final plain attempt so this
+            # tier still has a chance to answer. nodes.py's parser is the
+            # backstop for whatever shape actually comes back.
+            logger.warning(
+                "OpenRouter model %s rejected response_format=json_schema "
+                "(%s: %s); retrying with json_object mode.",
+                self._model,
+                type(exc).__name__,
+                exc,
+            )
+            try:
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    max_tokens=self._max_tokens,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as exc2:  # noqa: BLE001
+                logger.warning(
+                    "OpenRouter model %s also rejected response_format="
+                    "json_object (%s: %s); retrying with no response_format.",
+                    self._model,
+                    type(exc2).__name__,
+                    exc2,
+                )
+                response = self._client.chat.completions.create(
+                    model=self._model,
+                    max_tokens=self._max_tokens,
+                    messages=messages,
+                )
+
         return (response.choices[0].message.content or "").strip()
 
 
@@ -215,17 +307,14 @@ class FallbackLLMClient:
     rather than propagating immediately -- the cost of trying the next
     client is one extra network call, not a wrong answer.
 
-    Caveat worth knowing before you rely on this for the demo:
-    app/agent/router.py's exception handling only has explicit mappings
-    for `anthropic.*` exception types today. If EVERY client in this chain
-    fails, this re-raises whatever the LAST one raised -- so if your last
-    fallback tier is Gemini, Groq, or OpenRouter and it also fails, that
-    error won't match any of router.py's `except anthropic.*` clauses and
-    will surface as a generic unhandled 500 instead of one of the friendly
-    mapped messages. Put an Anthropic client last if you want router.py's
-    existing mapping to still apply on total failure, or widen router.py's
-    exception handling later to cover the other providers' error types --
-    happy to make that change when you get there.
+    Caveat worth knowing: app/agent/router.py's exception handling only has
+    explicit mappings for `anthropic.*` exception types today. Neither
+    Gemini nor OpenRouter is Anthropic, so if EVERY client in this chain
+    fails, the re-raised error won't match any of router.py's
+    `except anthropic.*` clauses and will surface as a generic unhandled
+    500 instead of one of the friendly mapped messages. Worth widening
+    router.py's exception handling to cover these providers' error types
+    if this chain is what you're shipping past the demo.
     """
 
     def __init__(self, clients: list) -> None:
@@ -253,10 +342,4 @@ class FallbackLLMClient:
         raise last_exc
 
 
-__all__ = [
-    "AnthropicLLMClient",
-    "GeminiLLMClient",
-    "GroqLLMClient",
-    "OpenRouterLLMClient",
-    "FallbackLLMClient",
-]
+__all__ = ["GeminiLLMClient", "OpenRouterLLMClient", "FallbackLLMClient"]

@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.email import send_role_change_email
-from app.features.auth.model import User
+from app.features.auth.model import User, UserRole
 from app.features.courses.repository import CourseRepository
 from app.features.profile.schema import (
     ProfilePictureResponse,
@@ -32,22 +32,31 @@ class ProfileService:
 
     # USER DTO
 
-    def _get_course_id(
-        self,
-        user: User,
-    ) -> int | None:
-
-        assignment = self.course_repository.get_learner_assignment(user.id)
-
-        if assignment is None: 
-            return None
-
-        return assignment.course_id
-
     def _to_user_dto(
         self,
         user: User,
     ) -> UserDto:
+
+        cohort = None 
+        course = None
+
+        # ---------------- LEARNER ----------------
+
+        if user.role == UserRole.LEARNER: 
+            cohort = self.repository.get_learner_cohort( user.id ) 
+            course = self.repository.get_learner_course( user.id )
+
+        # ---------------- TRAINER ----------------
+
+        if user.role == UserRole.TRAINER:
+            cohort = self.repository.get_trainer_cohort( user.id )
+            course = self.repository.get_trainer_course( user.id )
+
+        # ---------------- MENTOR ----------------
+
+        elif user.role == UserRole.MENTOR:
+            cohort = None 
+            course = None     
 
         return UserDto(
             id=user.id,
@@ -56,7 +65,13 @@ class ProfileService:
             role=user.role,
             is_active=user.is_active,
             profile_picture=user.profile_picture,
-            course_id=self._get_course_id(user),
+
+            cohort_id=cohort.id if cohort else None,
+            cohort_name=cohort.name if cohort else None,
+
+            course_id=course.id if course else None,
+            course_name=course.title if course else None,
+            
             created_at=user.created_at,
         )
 

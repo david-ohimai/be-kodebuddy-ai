@@ -127,7 +127,11 @@ class AgentState(TypedDict, total=False):
         written by `reason` (or `no_context`), read by `confidence_gate`
       - gate fields:
         written by `confidence_gate` (or `no_context`), read by `route`
-      - output fields:   written by `route`, read by Dev D's service.py
+      - output fields:   written by `route`, read by Dev D's service.py.
+        Note: `route` now only *recommends* escalation (via
+        `escalation_available`/`escalation_reason`) rather than writing one
+        — the actual write happens out-of-band via the learner-triggered
+        `POST /agent/escalate` endpoint, which never touches this state.
 
     IMPORTANT — state is per-turn, not accumulating: every graph.invoke()
     call should receive a state containing only the input fields below. The
@@ -189,5 +193,19 @@ class AgentState(TypedDict, total=False):
 
     # --- route node output (final) ---
     final_response: str | None
+    # True only once an escalation row has actually been written. `route`
+    # no longer writes one itself (see nodes.py::make_route_node) — this
+    # stays False for every graph-driven turn today and is only ever True
+    # if something upstream of `route` writes an escalation and sets this
+    # directly (kept for forward compatibility / defensive completeness,
+    # not currently exercised by any node).
     escalated: bool
     escalation_id: int | None
+    # True when `route` judged the turn not confident enough to answer
+    # outright and is offering escalation as a choice, without having
+    # written anything. This is what the frontend should use to decide
+    # whether to render the "Escalate to trainer" button — distinct from
+    # `escalated`, which reflects whether a write actually happened. A
+    # learner tapping that button hits POST /agent/escalate separately;
+    # nothing in the graph observes that follow-up call.
+    escalation_available: bool
