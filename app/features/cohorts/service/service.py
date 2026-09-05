@@ -67,20 +67,7 @@ class CohortService:
         cohort_data: CohortUpdate,
     ) -> Cohort:
 
-        if (
-            cohort_data.start_date is not None
-            and cohort_data.end_date is not None
-            and cohort_data.start_date >= cohort_data.end_date
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cohort start date must be before end date.",
-            )
-
-        cohort = self.repository.update(
-            cohort_id,
-            cohort_data,
-        )
+        cohort = self.repository.get_by_id(cohort_id)
 
         if cohort is None:
             raise HTTPException(
@@ -91,14 +78,25 @@ class CohortService:
         update_data = cohort_data.model_dump(
             exclude_unset=True
         )
+        
+        if (
+            cohort_data.start_date is not None
+            and cohort_data.end_date is not None
+            and cohort_data.start_date >= cohort_data.end_date
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cohort start date must be before end date.",
+            )
+
+        for field, value in update_data.items():
+            setattr(cohort, field, value)
+        
 
         if update_data.get("is_open") is True:
             self.repository.close_other_cohorts(
                 cohort_id
             )
-
-        for field, value in update_data.items():
-            setattr(cohort, field, value)
 
         cohort.updated_at = datetime.now(timezone.utc)
 

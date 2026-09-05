@@ -1,6 +1,5 @@
 from sqlmodel import Session, select
 from app.features.auth.model import User
-from app.features.cohorts.models.cohort_learners import CohortLearner
 from .model import Course, CourseTrainer,  CourseLearner
 from app.features.cohorts.models.model import Cohort
 
@@ -138,20 +137,21 @@ class CourseRepository:
 
         return self.session.exec(statement).first()
 
-    def get_learner_cohort(
-        self,
-        learner_id: int,
-    ) -> Cohort | None:
+    def get_learner_cohort(self, learner_id: int,) -> Cohort | None:
 
         statement = (
             select(Cohort)
             .join(
-                CohortLearner,
-                Cohort.id == CohortLearner.cohort_id,
+                Course,
+                Cohort.id == Course.cohort_id,
+                )    
+            .join(
+                CourseLearner,
+                Course.id == CourseLearner.course_id,
             )
             .where(
-                CohortLearner.learner_id == learner_id,
-                CohortLearner.is_active == True,
+                CourseLearner.learner_id == learner_id,
+                Course.is_active == True,
             )
         )
 
