@@ -8,7 +8,7 @@ from app.features.courses.model import (
     CourseLearner, 
     CourseTrainer, 
 ) 
-
+from app.features.mentors.model import MentorLearner
 
 class ProfileRepository:
 

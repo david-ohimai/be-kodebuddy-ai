@@ -27,7 +27,7 @@ def get_course_service(
 ):
     return CourseService(
         repository=CourseRepository(session),
-        cohort_repository=CohortRepository(session)
+        cohort_repository=CohortRepository(session),
     )
 
 
@@ -88,6 +88,35 @@ def assign_trainer(
         data.trainer_id,
     )
 
+
+@router.post(
+    "/{course_id}/assign-learner",
+    response_model=CourseAssignmentResponse,
+)
+def assign_learner(
+    course_id: int,
+    data: AssignLearner,
+    current_admin: User = Depends(get_current_admin),
+    service: CourseService = Depends(get_course_service),
+):
+
+    assignment = service.assign_learner(
+        course_id=course_id,
+        learner_id=data.learner_id,
+    )
+
+    course = service.get_course_for_admin(
+        assignment.course_id
+    )
+
+
+    return CourseAssignmentResponse(
+        message="Learner course assigned successfully.",
+        course=course,
+    )
+
+
+
 @router.post(
     "/{course_id}/select",
     response_model=CourseAssignmentResponse,
@@ -95,12 +124,8 @@ def assign_trainer(
 )
 def select_course(
     course_id: int,
-    current_user: User = Depends(
-        get_current_user
-    ),
-    service: CourseService = Depends(
-        get_course_service
-    ),
+    current_user: User = Depends(get_current_user),
+    service: CourseService = Depends(get_course_service),
 ):
     assignment = service.select_course(
         course_id=course_id,
@@ -142,30 +167,4 @@ def get_course(
     return service.get_course(
         course_id,
         current_user,
-    )
-
-@router.post(
-    "/{course_id}/assign-learner",
-    response_model=CourseAssignmentResponse,
-)
-def assign_learner(
-    course_id: int,
-    data: AssignLearner,
-    current_admin: User = Depends(get_current_admin),
-    service: CourseService = Depends(get_course_service),
-):
-
-    assignment = service.assign_learner(
-        course_id=course_id,
-        learner_id=data.learner_id,
-    )
-
-    course = service.get_course_for_admin(
-        assignment.course_id
-    )
-
-
-    return CourseAssignmentResponse(
-        message="Learner course assigned successfully.",
-        course=course,
     )

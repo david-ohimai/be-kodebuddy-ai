@@ -217,7 +217,7 @@ class CourseService:
         self,
         course_id: int,
         learner_id: int,
-    ) -> CourseLearner:
+    ):
         
         course = self.repository.get_by_id(course_id)
 
@@ -245,22 +245,6 @@ class CourseService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only learners can be assigned to a course.",
-            )
-
-        learner_cohort = self.repository.get_learner_cohort(learner_id=learner_id)
-
-        if learner_cohort is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Learner is not assigned to a cohort.",
-            )
-
-        if course.cohort_id != learner_cohort.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "The course does not belong to the learner's cohort."
-                ),
             )
 
         existing_assignment = self.repository.get_learner_assignment(

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-from app.core.auth import get_current_admin, get_current_learner, get_current_user
+from app.core.auth import get_current_admin
 from app.core.session import get_session
 from app.features.auth.model import User
 
@@ -92,20 +92,3 @@ def get_cohort_trainers(
     service: CohortAssignService = Depends(get_cohort_assign_service),
 ):
     return service.get_trainers(cohort_id)
-
-
-@router.post(
-    "/{cohort_id}/join",
-    response_model=CohortLearnerResponse,
-)
-def join_cohort(
-    cohort_id: int,
-    current_user: User = Depends(get_current_user),
-    service: CohortAssignService = Depends(
-        get_cohort_assign_service
-    ),
-):
-    return service.join_cohort(
-        cohort_id=cohort_id,
-        learner_id=current_user.id,
-    )
