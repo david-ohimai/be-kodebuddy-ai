@@ -10,8 +10,10 @@ from app.features.cohorts.repository.repository import CohortRepository
 from app.features.cohorts.schema.schema import (
     AssignLearnerRequest,
     AssignTrainerRequest,
+    AssignMentorRequest,
     CohortLearnerResponse,
     CohortTrainerResponse,
+    CohortMentorResponse,
 )
 from app.features.cohorts.service.cohort_assign_service import (
     CohortAssignService,
@@ -70,6 +72,23 @@ def assign_trainer(
         data.trainer_id,
     )
 
+@router.post(
+    "/{cohort_id}/mentor",
+    response_model=CohortMentorResponse,
+)
+def assign_mentor(
+    cohort_id: int,
+    data: AssignMentorRequest,
+    current_admin: User = Depends(get_current_admin),
+    service: CohortAssignService = Depends(
+        get_cohort_assign_service
+    ),
+):
+    return service.assign_mentor(
+        cohort_id,
+        data.mentor_id,
+    )
+
 @router.get(
     "/{cohort_id}/learners",
     response_model=list[CohortLearnerResponse],
@@ -92,3 +111,15 @@ def get_cohort_trainers(
     service: CohortAssignService = Depends(get_cohort_assign_service),
 ):
     return service.get_trainers(cohort_id)
+
+@router.get(
+    "/{cohort_id}/mentors",
+    response_model=list[CohortMentorResponse],
+)
+def get_cohort_mentors(
+    cohort_id: int,
+    current_admin: User = Depends(get_current_admin),
+    service: CohortAssignService = Depends(get_cohort_assign_service),
+):
+
+    return service.get_mentors(cohort_id)

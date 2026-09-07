@@ -9,6 +9,14 @@ from app.features.auth.model import UserRole
 class UpdateProfile(BaseModel):
     full_name: str | None = None
 
+class CourseSummary(BaseModel):
+    id: int
+    title: str
+
+class CohortSummary(BaseModel):
+    id: int
+    name: str
+
 class UserDto(BaseModel):
     id: int
     email: EmailStr
@@ -22,6 +30,9 @@ class UserDto(BaseModel):
 
     course_id: int | None = None
     course_name: str | None = None
+
+    cohorts: list[CohortSummary] = []
+    courses: list[CourseSummary] = []
     
     created_at: datetime
 

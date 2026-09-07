@@ -8,6 +8,8 @@ from app.core.email import send_role_change_email
 from app.features.auth.model import User, UserRole
 from app.features.courses.repository import CourseRepository
 from app.features.profile.schema import (
+    CohortSummary,
+    CourseSummary,
     ProfilePictureResponse,
     UpdateProfile,
     UpdateUserRole,
@@ -40,11 +42,30 @@ class ProfileService:
         cohort = None 
         course = None
 
+        cohorts: list[CohortSummary] = []
+        courses: list[CourseSummary] = []
+
         # ---------------- LEARNER ----------------
 
         if user.role == UserRole.LEARNER: 
             cohort = self.repository.get_learner_cohort( user.id ) 
             course = self.repository.get_learner_course( user.id )
+
+            if cohort:
+                cohorts = [
+                    CohortSummary(
+                        id=cohort.id,
+                        name=cohort.name,
+                    )
+                ]
+
+            if course:
+                courses = [
+                    CourseSummary(
+                        id=course.id,
+                        title=course.title,
+                    )
+                ]
 
         # ---------------- TRAINER ----------------
 
@@ -52,11 +73,58 @@ class ProfileService:
             cohort = self.repository.get_trainer_cohort( user.id )
             course = self.repository.get_trainer_course( user.id )
 
+            trainer_cohorts = self.repository.get_trainer_cohorts(
+                user.id
+            )
+
+            cohorts = [
+                CohortSummary(
+                    id=item.id,
+                    name=item.name,
+                )
+                for item in trainer_cohorts
+            ]
+
+            # New: return all trainer courses
+            trainer_courses = self.repository.get_trainer_courses(
+                user.id
+            )
+
+            courses = [
+                CourseSummary(
+                    id=item.id,
+                    title=item.title,
+                )
+                for item in trainer_courses
+            ]
+
         # ---------------- MENTOR ----------------
 
         elif user.role == UserRole.MENTOR:
-            cohort = None 
-            course = None     
+            trainer_cohorts = self.repository.get_trainer_cohorts(
+                user.id
+            )
+
+            cohorts = [
+                CohortSummary(
+                    id=item.id,
+                    name=item.name,
+                )
+                for item in trainer_cohorts
+            ]
+
+            # New: return all trainer courses
+            trainer_courses = self.repository.get_trainer_courses(
+                user.id
+            )
+
+            courses = [
+                CourseSummary(
+                    id=item.id,
+                    title=item.title,
+                )
+                for item in trainer_courses
+            ] 
 
         return UserDto(
             id=user.id,
@@ -71,6 +139,9 @@ class ProfileService:
 
             course_id=course.id if course else None,
             course_name=course.title if course else None,
+
+            cohorts=cohorts,
+            courses=courses,
             
             created_at=user.created_at,
         )

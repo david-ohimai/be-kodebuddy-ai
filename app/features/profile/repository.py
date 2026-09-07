@@ -1,7 +1,11 @@
 from sqlmodel import Session, select
 
 from app.features.auth.model import User
-from app.features.cohorts.models.cohort_learners import ( CohortLearner, CohortTrainer, ) 
+from app.features.cohorts.models.cohort_learners import ( 
+    CohortLearner, 
+    CohortTrainer,
+    CohortMentor, 
+    ) 
 from app.features.cohorts.models.model import Cohort 
 from app.features.courses.model import ( 
     Course, 
@@ -95,6 +99,25 @@ class ProfileRepository:
 
         return self.session.exec(statement).first()
 
+    def get_trainer_cohorts(
+        self,
+        trainer_id: int,
+    ) -> list[Cohort]:
+
+        statement = (
+            select(Cohort)
+            .join(
+                CohortTrainer,
+                Cohort.id == CohortTrainer.cohort_id,
+            )
+            .where(
+                CohortTrainer.trainer_id == trainer_id,
+                CohortTrainer.removed_at.is_(None),
+            )
+        )
+
+        return list(self.session.exec(statement).all())
+
     def get_trainer_course(
         self,
         trainer_id: int,
@@ -113,6 +136,48 @@ class ProfileRepository:
         )
 
         return self.session.exec(statement).first()
+
+
+    def get_trainer_courses(
+        self,
+        trainer_id: int,
+    ) -> list[Course]:
+
+        statement = (
+            select(Course)
+            .join(
+                CourseTrainer,
+                Course.id == CourseTrainer.course_id,
+            )
+            .where(
+                CourseTrainer.trainer_id == trainer_id,
+                Course.is_active == True,
+            )
+            .distinct()
+        )
+
+        return list(self.session.exec(statement).all())
+
+    def get_mentor_cohorts(
+        self,
+        mentor_id: int,
+    ) -> list[Cohort]:
+
+        statement = (
+            select(Cohort)
+            .join(
+                CohortMentor,
+                Cohort.id == CohortMentor.cohort_id,
+            )
+            .where(
+                CohortMentor.mentor_id == mentor_id,
+                CohortMentor.removed_at.is_(None),
+            )
+            .distinct()
+        )
+
+        return list(self.session.exec(statement).all())
+  
 
     # ---------------- MENTOR ----------------
 

@@ -51,6 +51,9 @@ class AssignTrainerRequest(BaseModel):
     trainer_id: int
 
 
+class AssignMentorRequest(BaseModel):
+    mentor_id: int
+
 class CohortLearnerResponse(BaseModel):
     id: int
     cohort_id: int
@@ -64,6 +67,13 @@ class CohortTrainerResponse(BaseModel):
     id: int
     cohort_id: int
     trainer_id: int
+    assigned_at: datetime
+    removed_at: datetime | None
+
+class CohortMentorResponse(BaseModel):
+    id: int
+    cohort_id: int
+    mentor_id: int
     assigned_at: datetime
     removed_at: datetime | None
 

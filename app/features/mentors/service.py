@@ -72,8 +72,37 @@ class MentorService:
         assignment = MentorLearner(mentor_id=mentor_id, learner_id=learner_id)
         return self.repository.create_assignment(assignment)
 
-    def get_assigned_learners(self, mentor: User) -> list[AssignedLearnerSummary]:
-        rows = self.repository.get_assigned_learners(mentor.id)
+    def get_assigned_learners(
+        self,
+        current_user: User, 
+        mentor_id: int | None = None,
+        ) -> list[AssignedLearnerSummary]:
+
+        if current_user.role == UserRole.MENTOR:
+            mentor_id = current_user.id
+
+        elif current_user.role == UserRole.ADMIN:
+            if mentor_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="mentor_id is required for admin",
+                )
+
+            mentor = self.session.get(User, mentor_id)
+
+            if mentor is None or mentor.role != UserRole.MENTOR:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Mentor not found",
+                )
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Mentor or admin access required",
+            )
+        
+        rows = self.repository.get_assigned_learners(mentor_id)
 
         return [
             AssignedLearnerSummary(

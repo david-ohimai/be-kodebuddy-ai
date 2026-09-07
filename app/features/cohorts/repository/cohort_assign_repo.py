@@ -1,8 +1,7 @@
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select
 
 from app.features.auth.model import User
-from app.features.cohorts.models.cohort_learners import CohortLearner, CohortTrainer
-
+from app.features.cohorts.models.cohort_learners import CohortLearner, CohortMentor, CohortTrainer
 
 
 class CohortAssignRepository:
@@ -62,6 +61,54 @@ class CohortAssignRepository:
 
         statement = select(CohortTrainer).where(
             CohortTrainer.cohort_id == cohort_id
+        )
+
+        return list(self.session.exec(statement).all())
+
+    def assign_mentor(
+        self, 
+        cohort_id: int,
+        mentor_id: int,
+    ) -> CohortMentor:
+        relationship = CohortMentor(
+            cohort_id=cohort_id,
+            mentor_id=mentor_id,
+        )
+
+        self.session.add(relationship)
+        self.session.commit()
+        self.session.refresh(relationship)
+
+        return relationship
+
+    def get_mentor_assignment(
+        self,
+        cohort_id: int,
+        mentor_id: int,
+    ) -> CohortMentor | None:
+        statement = select(CohortMentor).where(
+            CohortMentor.cohort_id == cohort_id,
+            CohortMentor.mentor_id == mentor_id,
+        )
+        return self.session.exec(statement).first()
+
+
+    def update_mentor_assignment(
+        self,
+        assignment: CohortMentor,
+    ) -> CohortMentor:
+        self.session.add(assignment)
+        self.session.commit()
+        self.session.refresh(assignment)
+        return assignment
+
+    def get_mentors(
+        self,
+        cohort_id: int,
+    ) -> list[CohortMentor]:
+
+        statement = select(CohortMentor).where(
+            CohortMentor.cohort_id == cohort_id
         )
 
         return list(self.session.exec(statement).all())

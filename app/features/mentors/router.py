@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-from app.core.auth import get_current_admin, get_current_mentor
+from app.core.auth import get_current_admin, get_current_mentor, get_current_user
 from app.core.session import get_session
 from app.features.auth.model import User
 from app.features.activity.repository import ActivityRepository
@@ -57,10 +57,14 @@ def assign_learner_to_mentor(
     response_model=list[AssignedLearnerSummary],
 )
 def get_my_assigned_learners(
-    current_mentor: User = Depends(get_current_mentor),
+    mentor_id: int | None = None,
+    current_user: User = Depends(get_current_user),
     service: MentorService = Depends(get_mentor_service),
 ):
-    return service.get_assigned_learners(current_mentor)
+    return service.get_assigned_learners(
+        current_user=current_user, 
+        mentor_id=mentor_id
+    )
 
 
 @router.get(

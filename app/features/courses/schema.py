@@ -42,3 +42,8 @@ class CourseResponse(BaseModel):
 class CourseAssignmentResponse(BaseModel):
     message: str
     course: CourseResponse | None = None
+
+class CourseLearnerResponse(BaseModel):
+    learner_id: int
+    full_name: str | None
+    email: str

@@ -11,6 +11,7 @@ from .schema import (
     AssignTrainer,
     CourseAssignmentResponse,
     CourseCreate,
+    CourseLearnerResponse,
     CourseResponse,
     CourseUpdate,
 )
@@ -150,6 +151,28 @@ def get_courses(
 ):
     return service.get_courses(current_user)
 
+@router.get(
+    "/trainers/{trainer_id}/learners",
+    response_model=list[CourseLearnerResponse],
+)
+def get_trainer_learners(
+    trainer_id: int,
+    current_user: User = Depends(get_current_user),
+    service: CourseService = Depends(get_course_service),
+):
+    learners = service.get_trainer_learners(
+        trainer_id=trainer_id,
+        current_user=current_user,
+    )
+
+    return [
+        CourseLearnerResponse(
+            learner_id=learner.id,
+            full_name=learner.full_name,
+            email=learner.email,
+        )
+        for learner in learners
+    ]
 
 @router.get(
     "/{course_id}",
@@ -164,3 +187,26 @@ def get_course(
         course_id,
         current_user,
     )
+
+@router.get(
+    "/{course_id}/learners",
+    response_model=list[CourseLearnerResponse],
+)
+def get_course_learners(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    service: CourseService = Depends(get_course_service),
+):
+    learners = service.get_course_learners(
+        course_id=course_id,
+        current_user=current_user,
+    )
+
+    return [
+        CourseLearnerResponse(
+            learner_id=learner.id,
+            full_name=learner.full_name,
+            email=learner.email,
+        )
+        for learner in learners
+    ]
