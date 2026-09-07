@@ -1,7 +1,6 @@
 from fastapi import HTTPException
 
-from app.features.auth.model import UserRole
-from app.features.cohorts.models.cohort_learners import CohortLearner
+from app.features.auth.model import User, UserRole
 from app.features.cohorts.repository.cohort_assign_repo import (
     CohortAssignRepository,
 )
@@ -112,6 +111,60 @@ class CohortAssignService:
             trainer_id,
         )
 
+    def assign_mentor(
+            self,
+            cohort_id: int,
+            mentor_id: int,
+        ):
+            cohort = self.cohort_repository.get_by_id(cohort_id)
+    
+            if cohort is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Cohort not found",
+                )
+    
+            mentor = self.repository.get_user_by_id(mentor_id)
+    
+            if mentor is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="User not found",
+                )
+    
+            if mentor.role != UserRole.MENTOR:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only users with the mentor role can be assigned as cohort mentors",
+                )
+    
+            existing = self.repository.get_mentor_assignment(
+                cohort_id,
+                mentor_id,
+            )
+    
+            # Already assigned and active
+            if existing and existing.removed_at is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Mentor is already assigned to this cohort",
+                )
+    
+            # Previously assigned but removed
+            if existing:
+                existing.removed_at = None
+    
+                return self.repository.update_mentor_assignment(
+                    existing
+                )
+    
+            # Never assigned before
+            return self.repository.assign_mentor(
+                cohort_id,
+                mentor_id,
+            )
+    
+
     def get_learners(
         self,
         cohort_id: int,
@@ -123,3 +176,14 @@ class CohortAssignService:
         cohort_id: int,
     ):
         return self.repository.get_trainers(cohort_id)
+
+    def get_mentors(self, cohort_id: int):
+        cohort = self.cohort_repository.get_by_id(cohort_id)
+
+        if cohort is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Cohort not found.",
+            )
+
+        return self.repository.get_mentors(cohort_id)

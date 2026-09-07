@@ -69,3 +69,34 @@ class CohortTrainer(SQLModel, table=True):
     )
 
     removed_at: datetime | None = None
+
+class CohortMentor(SQLModel, table=True):
+    __tablename__ = "cohort_mentors"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "cohort_id",
+            "mentor_id",
+            name="uq_cohort_mentor",
+        ),
+    )
+
+    id: int | None = Field(
+        default=None,
+        primary_key=True,
+    )
+
+    cohort_id: int = Field(
+        foreign_key="cohorts.id"
+    )
+
+    mentor_id: int = Field(
+        foreign_key="users.id",
+        index=True,
+    )
+
+    assigned_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    removed_at: datetime | None = None

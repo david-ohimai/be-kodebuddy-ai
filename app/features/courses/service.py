@@ -392,6 +392,74 @@ class CourseService:
             detail="Access denied",
         )
 
+    def get_course_learners(
+        self,
+        course_id: int,
+        current_user: User,
+    ) -> list[User]:
+
+        course = self.repository.get_by_id(course_id)
+
+        if course is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Course not found",
+            )
+
+        if current_user.role == UserRole.ADMIN:
+            return self.repository.get_course_learners(course_id)
+
+        if current_user.role == UserRole.TRAINER:
+            if not self.repository.trainer_has_access(
+                trainer_id=current_user.id,
+                course_id=course_id,
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot access learners from another trainer's course.",
+                )
+
+            return self.repository.get_course_learners(course_id)
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    def get_trainer_learners(
+        self,
+        trainer_id: int,
+        current_user: User,
+    ) -> list[User]:
+
+        if current_user.role not in {
+            UserRole.ADMIN,
+            UserRole.TRAINER,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
+
+        trainer = self.repository.get_user_by_id(trainer_id)
+
+        if trainer is None or trainer.role != UserRole.TRAINER:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Trainer not found",
+            )
+
+        if (
+            current_user.role == UserRole.TRAINER
+            and current_user.id != trainer_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot access another trainer's learners.",
+            )
+
+        return self.repository.get_trainer_learners(trainer_id)
+
     # ---------- INTERNAL ----------
 
     def get_course_for_admin(self, course_id: int) -> Course:
