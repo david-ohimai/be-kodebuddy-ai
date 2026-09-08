@@ -227,7 +227,7 @@ class AgentRepository:
         query_embedding: Sequence[float],
         course_id: int | None = None,
         module_id: int | None = None,
-        content_type: ContentType | None = None,
+        content_type: ContentType | Sequence[ContentType] | None = None,
         limit: int = DEFAULT_SEARCH_LIMIT,
         min_score: float | None = None,
     ) -> list[RetrievedChunk]:
@@ -244,7 +244,9 @@ class AgentRepository:
             course_id: restrict to one course. When None, searches every course
                 the learner is enrolled in.
             module_id: restrict to one module within the course.
-            content_type: 'curriculum', 'faq', or 'resource'.
+            content_type: 'curriculum', 'faq', or 'resource' — a single value,
+                a sequence of values (e.g. search curriculum *and* resource
+                content in one call), or None to search every content type.
             limit: maximum chunks to return (clamped to MAX_SEARCH_LIMIT).
             min_score: drop chunks whose cosine similarity is below this.
 
@@ -256,6 +258,18 @@ class AgentRepository:
             raise ValueError("query_embedding must be a non-empty vector.")
 
         effective_limit = max(1, min(int(limit), MAX_SEARCH_LIMIT))
+
+        # Normalise a single content_type or a sequence of them into a list
+        # for the SQL `= ANY(...)` check below. `None` means "don't filter
+        # on content_type at all" and must stay `None` (not `[None]`), or
+        # every row would be excluded.
+        content_types: list[str] | None
+        if content_type is None:
+            content_types = None
+        elif isinstance(content_type, str):
+            content_types = [content_type]
+        else:
+            content_types = list(content_type)
 
         # `<=>` is pgvector's cosine *distance*; similarity is 1 - distance.
         # Ordering by the raw distance lets an ANN index be used if present.
@@ -301,8 +315,8 @@ class AgentRepository:
                         WHERE m.id = ce.module_id
                           AND m.is_active IS TRUE
                    ))
-              AND (CAST(:content_type AS TEXT) IS NULL
-                   OR ce.content_type = CAST(:content_type AS TEXT))
+              AND (CAST(:content_types AS TEXT[]) IS NULL
+                   OR ce.content_type = ANY(CAST(:content_types AS TEXT[])))
               AND (CAST(:min_score AS FLOAT) IS NULL
                    OR 1 - (ce.{EMBEDDINGS_VECTOR_COLUMN}
                            <=> CAST(:query_embedding AS vector))
@@ -317,7 +331,7 @@ class AgentRepository:
             "learner_id": self.learner_id,
             "course_id": int(course_id) if course_id is not None else None,
             "module_id": int(module_id) if module_id is not None else None,
-            "content_type": content_type,
+            "content_types": content_types,
             "global_content_type": FAQ,
             "min_score": float(min_score) if min_score is not None else None,
             "limit": effective_limit,

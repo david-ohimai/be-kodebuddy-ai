@@ -15,11 +15,13 @@ from typing import Callable
 
 from app.agent.embedding_seam import embed_query
 from app.agent.repository import DEFAULT_SEARCH_LIMIT, AgentRepository
-from app.agent.types import CURRICULUM, RetrievedChunk
+from app.agent.types import CURRICULUM, RESOURCE, RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
 SearchCurriculum = Callable[..., "list[RetrievedChunk]"]
+
+MODULE_CONTENT_TYPES = (CURRICULUM, RESOURCE)
 
 
 def make_search_curriculum(
@@ -67,7 +69,7 @@ def make_search_curriculum(
             query_embedding=embedding,
             course_id=course_id,
             module_id=module_id,
-            content_type=CURRICULUM,
+            content_type=MODULE_CONTENT_TYPES,
             limit=limit,
             min_score=min_score,
         )

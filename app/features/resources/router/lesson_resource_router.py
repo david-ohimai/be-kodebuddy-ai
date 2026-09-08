@@ -1,5 +1,6 @@
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -46,6 +47,7 @@ def get_lesson_resource_service(
         module_repository=module_repository,
     )
 
+
 @router.post(
     "",
     response_model=ResourceResponse,
@@ -53,15 +55,14 @@ def get_lesson_resource_service(
 )
 def create_resource(
     lesson_id: int,
+    background_tasks: BackgroundTasks,
     title: str = Form(...),
     description: str | None = Form(default=None),
     type: ResourceType = Form(...),
     url: str | None = Form(default=None),
     content: str | None = Form(default=None),
     file: UploadFile | None = File(default=None),
-    current_user: User = Depends(
-        get_current_user
-    ),
+    current_user: User = Depends(get_current_user),
     service: LessonResourceService = Depends(
         get_lesson_resource_service
     ),
@@ -79,8 +80,10 @@ def create_resource(
         lesson_id=lesson_id,
         data=data,
         current_user=current_user,
+        background_tasks=background_tasks,
         file=file,
     )
+
 
 @router.get(
     "",
@@ -88,11 +91,7 @@ def create_resource(
 )
 def get_lesson_resources(
     lesson_id: int,
-
-    current_user: User = Depends(
-        get_current_user
-    ),
-
+    current_user: User = Depends(get_current_user),
     service: LessonResourceService = Depends(
         get_lesson_resource_service
     ),
@@ -103,6 +102,7 @@ def get_lesson_resources(
         current_user=current_user,
     )
 
+
 @router.get(
     "/{resource_id}",
     response_model=ResourceResponse,
@@ -110,11 +110,7 @@ def get_lesson_resources(
 def get_lesson_resource(
     lesson_id: int,
     resource_id: int,
-
-    current_user: User = Depends(
-        get_current_user
-    ),
-
+    current_user: User = Depends(get_current_user),
     service: LessonResourceService = Depends(
         get_lesson_resource_service
     ),
@@ -126,6 +122,7 @@ def get_lesson_resource(
         current_user=current_user,
     )
 
+
 @router.patch(
     "/{resource_id}",
     response_model=ResourceResponse,
@@ -133,6 +130,7 @@ def get_lesson_resource(
 def update_lesson_resource(
     lesson_id: int,
     resource_id: int,
+    background_tasks: BackgroundTasks,
     title: str | None = Form(default=None),
     description: str | None = Form(default=None),
     type: ResourceType | None = Form(default=None),
@@ -160,8 +158,10 @@ def update_lesson_resource(
         resource_id=resource_id,
         data=data,
         current_user=current_user,
+        background_tasks=background_tasks,
         file=file,
     )
+
 
 @router.delete(
     "/{resource_id}",
@@ -170,6 +170,7 @@ def update_lesson_resource(
 def delete_lesson_resource(
     lesson_id: int,
     resource_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     service: LessonResourceService = Depends(
         get_lesson_resource_service
@@ -180,4 +181,5 @@ def delete_lesson_resource(
         lesson_id=lesson_id,
         resource_id=resource_id,
         current_user=current_user,
+        background_tasks=background_tasks,
     )

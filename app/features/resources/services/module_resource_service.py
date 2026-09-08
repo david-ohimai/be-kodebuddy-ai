@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 
 from app.features.auth.model import User
 from app.features.modules.repository import ModuleRepository
@@ -23,13 +23,14 @@ class ModuleResourceService(BaseResourceService):
 
         self.module_repository = module_repository
 
-     # ============ CREATE ============
+    # ============ CREATE ============
 
     def create_resource(
         self,
         module_id: int,
         data: ResourceCreate,
         current_user: User,
+        background_tasks: BackgroundTasks | None = None,
         file=None,
     ) -> Resource:
 
@@ -59,14 +60,19 @@ class ModuleResourceService(BaseResourceService):
             file=file,
         )
 
-        return self.repository.create(
+        resource = self.repository.create(
             resource_data=data,
             module_id=module_id,
             created_by=current_user.id,
             lesson_id=None,
         )
 
-     # ============ GET ALL ============
+        # Schedule ingestion
+        self._schedule_ingestion(resource.id, background_tasks)
+
+        return resource
+
+    # ============ GET ALL ============
 
     def get_resources(
         self,
@@ -87,7 +93,7 @@ class ModuleResourceService(BaseResourceService):
             module_id
         )
 
-     # ============ GET ONE ============
+    # ============ GET ONE ============
 
     def get_resource(
         self,
@@ -117,7 +123,7 @@ class ModuleResourceService(BaseResourceService):
             )
 
         return resource
-    
+
     # ============ UPDATE ============
 
     def update_resource(
@@ -126,6 +132,7 @@ class ModuleResourceService(BaseResourceService):
         resource_id: int,
         data: ResourceUpdate,
         current_user: User,
+        background_tasks: BackgroundTasks | None = None,
         file=None,
     ) -> Resource:
 
@@ -134,20 +141,26 @@ class ModuleResourceService(BaseResourceService):
             resource_id=resource_id,
         )
 
-        return self.update_resource_data(
+        updated = self.update_resource_data(
             resource=resource,
             data=data,
             current_user=current_user,
             file=file,
         )
 
-     # ============ DELETE ============
+        # Schedule ingestion
+        self._schedule_ingestion(updated.id, background_tasks)
+
+        return updated
+
+    # ============ DELETE ============
 
     def delete_resource(
         self,
         module_id: int,
         resource_id: int,
         current_user: User,
+        background_tasks: BackgroundTasks | None = None,
     ) -> Resource:
 
         resource = self.get_resource(
@@ -160,9 +173,14 @@ class ModuleResourceService(BaseResourceService):
             current_user,
         )
 
-        return self.repository.delete(
+        deleted = self.repository.delete(
             resource
         )
+
+        # Schedule ingestion (will remove embeddings since is_active=False)
+        self._schedule_ingestion(deleted.id, background_tasks)
+
+        return deleted
 
     # Shared update implementation from BaseResourceService
     update_resource_data = BaseResourceService.update_resource

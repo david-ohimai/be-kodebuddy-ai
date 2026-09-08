@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import HTTPException, UploadFile, status
+from fastapi import BackgroundTasks, HTTPException, UploadFile, status
 from app.features.auth.model import User, UserRole
 from app.features.resources.model import (
     Resource,
@@ -21,7 +21,7 @@ class BaseResourceService:
     ):
         self.repository = repository
 
-     # ============ PERMISSIONS ============ 
+    # ============ PERMISSIONS ============
 
     def check_can_create(
         self,
@@ -57,7 +57,30 @@ class BaseResourceService:
             detail="You do not have permission to modify this resource",
         )
 
-    # ============ VALIDATION ============ 
+    # ============ INGESTION SCHEDULING ============
+
+    def _schedule_ingestion(
+        self,
+        resource_id: int,
+        background_tasks: BackgroundTasks | None,
+    ) -> None:
+        """Schedules a background task to sync this resource's embeddings."""
+        from app.agent.ingestion import sync_resource_embeddings
+
+        if background_tasks is not None:
+            background_tasks.add_task(sync_resource_embeddings, resource_id)
+            return
+
+        try:
+            sync_resource_embeddings(resource_id)
+        except Exception:  # noqa: BLE001 -- never let ingestion break the API call
+            import logging
+            logger = logging.getLogger("kodebuddy.resources.service")
+            logger.exception(
+                "Inline ingestion failed for resource_id=%s", resource_id
+            )
+
+    # ============ VALIDATION ============
 
     def validate_resource_data(
         self,
@@ -84,7 +107,7 @@ class BaseResourceService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="A URL is required for link resources",
                 )
-            
+
             return
 
         if resource_type == ResourceType.ARTICLE:
@@ -97,7 +120,7 @@ class BaseResourceService:
 
             return
 
-    # ============  CREATE DATA  ============ 
+    # ============ CREATE DATA ============
 
     def prepare_create_data(
         self,
@@ -107,24 +130,27 @@ class BaseResourceService:
 
         if data.type == ResourceType.FILE:
 
-            file_url = self.save_file(file)
+            file_url, disk_path, file_name, mime_type = self.save_file(file)
 
             return data.model_copy(
                 update={
                     "url": file_url,
                     "content": None,
+                    "file_path": disk_path,
+                    "file_name": file_name,
+                    "mime_type": mime_type,
                 }
             )
 
         if data.type == ResourceType.LINK:
-            return data.model_copy(update={"content": None,})
+            return data.model_copy(update={"content": None})
 
         if data.type == ResourceType.ARTICLE:
-            return data.model_copy(update={"url": None,})
+            return data.model_copy(update={"url": None})
 
         return data
 
-    # ============  UPDATE ============ 
+    # ============ UPDATE ============
 
     def update_resource(
         self,
@@ -155,19 +181,22 @@ class BaseResourceService:
             ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail= "A new file is required when changing a resource to file type"
+                    detail="A new file is required when changing a resource to file type"
                 )
 
             if file is not None:
 
                 old_file_url = resource.url
-                new_file_url = self.save_file(file)
+                new_file_url, disk_path, file_name, mime_type = self.save_file(file)
 
                 data = data.model_copy(
                     update={
                         "type": ResourceType.FILE,
                         "url": new_file_url,
                         "content": None,
+                        "file_path": disk_path,
+                        "file_name": file_name,
+                        "mime_type": mime_type,
                     }
                 )
 
@@ -191,6 +220,9 @@ class BaseResourceService:
                     "type": ResourceType.FILE,
                     "url": resource.url,
                     "content": None,
+                    "file_path": resource.file_path,
+                    "file_name": resource.file_name,
+                    "mime_type": resource.mime_type,
                 }
             )
 
@@ -222,6 +254,9 @@ class BaseResourceService:
                     "type": ResourceType.LINK,
                     "url": url,
                     "content": None,
+                    "file_path": None,
+                    "file_name": None,
+                    "mime_type": None,
                 }
             )
 
@@ -262,6 +297,9 @@ class BaseResourceService:
                     "type": ResourceType.ARTICLE,
                     "url": None,
                     "content": content,
+                    "file_path": None,
+                    "file_name": None,
+                    "mime_type": None,
                 }
             )
 
@@ -279,11 +317,29 @@ class BaseResourceService:
             data,
         )
 
-    # FILE STORAGE
+    # ============ FILE STORAGE ============
+
     def save_file(
         self,
         file: UploadFile | None,
-    ) -> str:
+    ) -> tuple[str, str, str | None, str | None]:
+        """
+        Saves an uploaded file to disk and returns everything the
+        Resource row needs to record about it:
+
+            (public_url, disk_path, file_name, mime_type)
+
+        - public_url: the "/uploads/resources/<uuid>.<ext>" path stored on
+          `Resource.url` (what the client uses to download/view the file).
+        - disk_path: the absolute filesystem path stored on
+          `Resource.file_path` -- this is what content_extraction.py reads
+          when it parses the file for embeddings, so it MUST be populated
+          or file resources will never be ingested.
+        - file_name: the original uploaded filename, stored on
+          `Resource.file_name`.
+        - mime_type: the client-supplied content type, stored on
+          `Resource.mime_type`.
+        """
 
         if file is None:
             raise HTTPException(
@@ -292,7 +348,7 @@ class BaseResourceService:
             )
 
         upload_directory = "uploads/resources"
-        os.makedirs(upload_directory, exist_ok=True,)
+        os.makedirs(upload_directory, exist_ok=True)
 
         extension = ""
 
@@ -309,10 +365,10 @@ class BaseResourceService:
             f"{uuid.uuid4()}{extension}"
         )
 
-        file_path = os.path.join(upload_directory, filename,)
+        file_path = os.path.join(upload_directory, filename)
 
         try:
-            with open(file_path, "wb",) as buffer:
+            with open(file_path, "wb") as buffer:
                 while True:
                     chunk = file.file.read(
                         1024 * 1024
@@ -329,7 +385,10 @@ class BaseResourceService:
                 detail="Failed to save uploaded file",
             )
 
-        return f"/uploads/resources/{filename}"
+        public_url = f"/uploads/resources/{filename}"
+        disk_path = os.path.join(os.getcwd(), file_path)
+
+        return public_url, disk_path, file.filename, file.content_type
 
     def delete_file(
         self,

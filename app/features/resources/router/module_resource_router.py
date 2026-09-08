@@ -1,5 +1,6 @@
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -43,6 +44,7 @@ def get_module_resource_service(
         module_repository=module_repository,
     )
 
+
 @router.post(
     "",
     response_model=ResourceResponse,
@@ -50,6 +52,7 @@ def get_module_resource_service(
 )
 def create_resource(
     module_id: int,
+    background_tasks: BackgroundTasks,
     title: str = Form(...),
     description: str | None = Form(default=None),
     type: ResourceType = Form(...),
@@ -74,8 +77,10 @@ def create_resource(
         module_id=module_id,
         data=data,
         current_user=current_user,
+        background_tasks=background_tasks,
         file=file,
     )
+
 
 @router.get(
     "",
@@ -92,6 +97,7 @@ def get_all_resources(
     return service.get_resources(
         module_id=module_id,
     )
+
 
 @router.get(
     "/{resource_id}",
@@ -111,6 +117,7 @@ def get_resource(
         resource_id=resource_id,
     )
 
+
 @router.patch(
     "/{resource_id}",
     response_model=ResourceResponse,
@@ -118,6 +125,7 @@ def get_resource(
 def update_resource(
     module_id: int,
     resource_id: int,
+    background_tasks: BackgroundTasks,
     title: str | None = Form(default=None),
     description: str | None = Form(default=None),
     type: ResourceType | None = Form(default=None),
@@ -125,9 +133,7 @@ def update_resource(
     content: str | None = Form(default=None),
     is_active: bool | None = Form(default=None),
     file: UploadFile | None = File(default=None),
-    current_user: User = Depends(
-        get_current_user
-    ),
+    current_user: User = Depends(get_current_user),
     service: ModuleResourceService = Depends(
         get_module_resource_service
     ),
@@ -147,8 +153,10 @@ def update_resource(
         resource_id=resource_id,
         data=data,
         current_user=current_user,
+        background_tasks=background_tasks,
         file=file,
     )
+
 
 @router.delete(
     "/{resource_id}",
@@ -157,6 +165,7 @@ def update_resource(
 def delete_resource(
     module_id: int,
     resource_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     service: ModuleResourceService = Depends(
         get_module_resource_service
@@ -167,4 +176,5 @@ def delete_resource(
         module_id=module_id,
         resource_id=resource_id,
         current_user=current_user,
+        background_tasks=background_tasks,
     )

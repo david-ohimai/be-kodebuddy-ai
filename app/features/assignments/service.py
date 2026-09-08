@@ -1,5 +1,5 @@
-from datetime import datetime 
-from fastapi import HTTPException, status
+from datetime import datetime
+from fastapi import BackgroundTasks, HTTPException, status
 from app.features.auth.model import User, UserRole
 from app.features.assignments.model import Assignment
 from app.features.assignments.repository import AssignmentRepository
@@ -21,10 +21,33 @@ class AssignmentService:
         self.repository = repository
         self.module_repository = module_repository
 
+    # ============ INGESTION SCHEDULING ============
+
+    def _schedule_ingestion(
+        self,
+        assignment_id: int,
+        background_tasks: BackgroundTasks | None,
+    ) -> None:
+        """Schedules a background task to sync this assignment's embeddings."""
+        from app.agent.ingestion import sync_assignment_embeddings
+
+        if background_tasks is not None:
+            background_tasks.add_task(sync_assignment_embeddings, assignment_id)
+            return
+
+        try:
+            sync_assignment_embeddings(assignment_id)
+        except Exception:  # noqa: BLE001 -- never let ingestion break the API call
+            import logging
+            logger = logging.getLogger("kodebuddy.assignments.service")
+            logger.exception(
+                "Inline ingestion failed for assignment_id=%s", assignment_id
+            )
+
     def _get_assignment_response(
         self,
         assignment: Assignment,
-    ) -> AssignmentResponse:  
+    ) -> AssignmentResponse:
 
         return AssignmentResponse(
             id=assignment.id,
@@ -46,8 +69,8 @@ class AssignmentService:
         )
 
     def _validate_dates(
-        self, 
-        start_date: datetime, 
+        self,
+        start_date: datetime,
         due_date: datetime,
     ) -> None:
 
@@ -62,6 +85,7 @@ class AssignmentService:
         module_id: int,
         data: AssignmentCreate,
         current_user: User,
+        background_tasks: BackgroundTasks | None = None,
     ) -> AssignmentResponse:
 
         if current_user.role not in {
@@ -91,6 +115,9 @@ class AssignmentService:
             current_user.id,
         )
 
+        # Schedule ingestion
+        self._schedule_ingestion(assignment.id, background_tasks)
+
         return self._get_assignment_response(assignment)
 
     def get_assignments(
@@ -103,9 +130,9 @@ class AssignmentService:
         )
 
         return [
-            self._get_assignment_response(assignment) 
+            self._get_assignment_response(assignment)
             for assignment in assignments
-            ]
+        ]
 
     def get_assignment(
         self,
@@ -125,13 +152,14 @@ class AssignmentService:
             )
 
         return self._get_assignment_response(assignment)
-    
+
     def update_assignment(
         self,
         module_id: int,
         assignment_id: int,
         data: AssignmentUpdate,
         current_user: User,
+        background_tasks: BackgroundTasks | None = None,
     ) -> AssignmentResponse:
 
         module = self.module_repository.get_by_id(module_id)
@@ -161,7 +189,7 @@ class AssignmentService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to modify this assignment",
             )
-       
+
         start_date = (
             data.start_date
             if data.start_date is not None
@@ -184,6 +212,9 @@ class AssignmentService:
             data,
         )
 
+        # Schedule ingestion
+        self._schedule_ingestion(updated_assignment.id, background_tasks)
+
         return self._get_assignment_response(updated_assignment)
 
     def delete_assignment(
@@ -191,6 +222,7 @@ class AssignmentService:
         module_id: int,
         assignment_id: int,
         current_user: User,
+        background_tasks: BackgroundTasks | None = None,
     ) -> AssignmentResponse:
 
         module = self.module_repository.get_by_id(module_id)
@@ -225,8 +257,10 @@ class AssignmentService:
             assignment
         )
 
-        return self._get_assignment_response(deleted_assignment)
+        # Schedule ingestion (will remove embeddings since is_active=False)
+        self._schedule_ingestion(deleted_assignment.id, background_tasks)
 
+        return self._get_assignment_response(deleted_assignment)
 
     def _can_manage(
         self,

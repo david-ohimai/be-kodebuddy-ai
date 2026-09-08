@@ -114,6 +114,35 @@ class ResourceRepository:
 
         return resource
 
+    def attach_file(
+        self,
+        resource: Resource,
+        *,
+        file_path: str,
+        file_name: str,
+        mime_type: str | None,
+    ) -> Resource:
+        """
+        Records where an uploaded file for this resource landed on disk.
+
+        Clears `url` and `content` when a file is attached since a file
+        resource doesn't need them.
+        """
+        resource.file_path = file_path
+        resource.file_name = file_name
+        resource.mime_type = mime_type
+        resource.url = None
+        resource.content = None
+        resource.content_extract_status = None
+        resource.content_extract_error = None
+        resource.updated_at = datetime.now(timezone.utc)
+
+        self.db.add(resource)
+        self.db.commit()
+        self.db.refresh(resource)
+
+        return resource
+
     def delete(
         self,
         resource: Resource,
