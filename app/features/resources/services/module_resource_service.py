@@ -1,40 +1,41 @@
 from fastapi import HTTPException, status
 
-from app.features.auth.model import User, UserRole
+from app.features.auth.model import User
+from app.features.modules.repository import ModuleRepository
 from app.features.resources.model import Resource
 from app.features.resources.repository import ResourceRepository
 from app.features.resources.schema import (
     ResourceCreate,
     ResourceUpdate,
 )
-from app.features.modules.repository import ModuleRepository
+
+from .base_resource_service import BaseResourceService
 
 
-class ResourceService:
+class ModuleResourceService(BaseResourceService):
 
     def __init__(
         self,
         repository: ResourceRepository,
         module_repository: ModuleRepository,
     ):
-        self.repository = repository
+        super().__init__(repository)
+
         self.module_repository = module_repository
+
+     # ============ CREATE ============
 
     def create_resource(
         self,
         module_id: int,
         data: ResourceCreate,
         current_user: User,
+        file=None,
     ) -> Resource:
 
-        if current_user.role not in {
-            UserRole.ADMIN,
-            UserRole.TRAINER,
-        }:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admins and trainers can create resources",
-            )
+        self.check_can_create(
+            current_user
+        )
 
         module = self.module_repository.get_by_id(
             module_id
@@ -46,11 +47,26 @@ class ResourceService:
                 detail="Module not found",
             )
 
-        return self.repository.create(
-            data,
-            module_id,
-            current_user.id,
+        self.validate_resource_data(
+            resource_type=data.type,
+            url=data.url,
+            content=data.content,
+            file=file,
         )
+
+        data = self.prepare_create_data(
+            data=data,
+            file=file,
+        )
+
+        return self.repository.create(
+            resource_data=data,
+            module_id=module_id,
+            created_by=current_user.id,
+            lesson_id=None,
+        )
+
+     # ============ GET ALL ============
 
     def get_resources(
         self,
@@ -71,6 +87,8 @@ class ResourceService:
             module_id
         )
 
+     # ============ GET ONE ============
+
     def get_resource(
         self,
         module_id: int,
@@ -88,8 +106,8 @@ class ResourceService:
             )
 
         resource = self.repository.get_by_id(
-            resource_id,
-            module_id,
+            resource_id=resource_id,
+            module_id=module_id,
         )
 
         if resource is None:
@@ -99,6 +117,8 @@ class ResourceService:
             )
 
         return resource
+    
+    # ============ UPDATE ============
 
     def update_resource(
         self,
@@ -106,26 +126,22 @@ class ResourceService:
         resource_id: int,
         data: ResourceUpdate,
         current_user: User,
+        file=None,
     ) -> Resource:
 
         resource = self.get_resource(
-            module_id,
-            resource_id,
+            module_id=module_id,
+            resource_id=resource_id,
         )
 
-        if not self._can_manage(
-            resource,
-            current_user,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to modify this resource",
-            )
-
-        return self.repository.update(
-            resource,
-            data,
+        return self.update_resource_data(
+            resource=resource,
+            data=data,
+            current_user=current_user,
+            file=file,
         )
+
+     # ============ DELETE ============
 
     def delete_resource(
         self,
@@ -135,36 +151,18 @@ class ResourceService:
     ) -> Resource:
 
         resource = self.get_resource(
-            module_id,
-            resource_id,
+            module_id=module_id,
+            resource_id=resource_id,
         )
 
-        if not self._can_manage(
+        self.check_can_manage(
             resource,
             current_user,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to delete this resource",
-            )
+        )
 
         return self.repository.delete(
             resource
         )
 
-    def _can_manage(
-        self,
-        resource: Resource,
-        current_user: User,
-    ) -> bool:
-
-        if current_user.role == UserRole.ADMIN:
-            return True
-
-        if (
-            current_user.role == UserRole.TRAINER
-            and resource.created_by == current_user.id
-        ):
-            return True
-
-        return False
+    # Shared update implementation from BaseResourceService
+    update_resource_data = BaseResourceService.update_resource

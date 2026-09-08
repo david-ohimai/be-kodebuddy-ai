@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
-
+from app.features.resources.model import ResourceType
 
 class ResourceCreate(BaseModel):
     title: str = Field(
@@ -11,12 +11,11 @@ class ResourceCreate(BaseModel):
 
     description: str | None = None
 
-    type: str = Field(
-        min_length=1,
-        max_length=100,
-    )
+    type: ResourceType 
 
     url: str | None = None
+
+    content: str | None = None
 
 
 class ResourceUpdate(BaseModel):
@@ -27,25 +26,21 @@ class ResourceUpdate(BaseModel):
     )
 
     description: str | None = None
-
-    type: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
-
+    type: ResourceType | None = Field(default=None)
     url: str | None = None
-
+    content: str | None = None
     is_active: bool | None = None
 
 
 class ResourceResponse(BaseModel):
     id: int
     module_id: int
+    lesson_id: int | None
     title: str
     description: str | None
-    type: str
+    type: ResourceType
     url: str | None
+    content: str | None
     created_by: int
     created_at: datetime
     updated_at: datetime

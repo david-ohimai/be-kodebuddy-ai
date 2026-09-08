@@ -8,7 +8,8 @@ from app.features.cohorts.router.assign_cohort_router import router as assign_co
 from app.features.courses.router import router as course_router
 from app.features.modules.router import router as module_router
 from app.features.lessons.router import router as lesson_router
-from app.features.resources.router import router as resource_router
+from app.features.resources.router.module_resource_router import router as module_resource_router
+from app.features.resources.router.lesson_resource_router import router as lesson_resource_router
 from app.features.assignments.router import router as assignment_router
 from app.features.submissions.router import router as submission_router
 from app.features.progress.router import router as progress_router
@@ -51,7 +52,8 @@ app.include_router(assign_cohorts_router)
 app.include_router(course_router)
 app.include_router(module_router)
 app.include_router(lesson_router)
-app.include_router(resource_router)
+app.include_router(module_resource_router)
+app.include_router(lesson_resource_router)
 app.include_router(assignment_router)
 app.include_router(submission_router)
 app.include_router(progress_router)
