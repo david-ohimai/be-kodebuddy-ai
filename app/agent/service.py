@@ -49,32 +49,9 @@ from app.core.config import AGENT_MAX_HISTORY_TURNS
 
 logger = logging.getLogger("kodebuddy.agent.service")
 
-# One LLM client for the process, not one per request -- these are plain
-# HTTP client wrappers with no per-learner state, so there is nothing to
-# gain from rebuilding them on every call, and every request pays only the
-# cost of the actual API call(s).
-#
-# Order matters: each tier is only reached if every tier before it raises.
-#   1. Anthropic, primary model (AGENT_LLM_MODEL) -- what a normal request
-#      answers from.
-#   2. Anthropic, fallback model (AGENT_LLM_FALLBACK_MODEL) -- same
-#      provider, cheaper/faster, covers rate-limiting or overload on the
-#      primary model specifically.
-#   3-4. Groq, then Gemini -- genuinely different providers, so an
-#      Anthropic-wide outage doesn't take the agent down with it.
-#   5. OpenRouter -- broadest catch-all, since it can itself proxy to many
-#      underlying models/providers.
-#
-# NOTE: the last tier here is OpenRouter, not Anthropic. If every tier
-# fails, FallbackLLMClient re-raises OpenRouter's error, which
-# app/agent/router.py's exception handling does not currently have a
-# mapping for (only anthropic.* is mapped) -- a total failure will surface
-# as a generic unhandled 500 instead of one of router.py's friendly
-# messages. Fine for now; worth widening router.py's exception handling
-# if this chain order stays for production rather than just this demo.
 _llm_client = FallbackLLMClient([
-    GeminiLLMClient(),
     OpenRouterLLMClient(),
+    GeminiLLMClient(),
 ])
 
 
