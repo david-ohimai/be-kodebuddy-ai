@@ -58,4 +58,8 @@ class EscalationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # --- Learner details (populated by repository/service) ---
+    learner_full_name: str | None = None
+    learner_email: str | None = None
+
     model_config = ConfigDict(from_attributes=True)

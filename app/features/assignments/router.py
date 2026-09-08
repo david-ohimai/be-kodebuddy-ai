@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlmodel import Session
 
 from app.core.auth import (
@@ -49,6 +49,7 @@ def get_assignment_service(
 def create_assignment(
     module_id: int,
     data: AssignmentCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
@@ -56,6 +57,7 @@ def create_assignment(
         module_id,
         data,
         current_user,
+        background_tasks,
     )
 
 
@@ -97,6 +99,7 @@ def update_assignment(
     module_id: int,
     assignment_id: int,
     data: AssignmentUpdate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
@@ -105,6 +108,7 @@ def update_assignment(
         assignment_id,
         data,
         current_user,
+        background_tasks,
     )
 
 
@@ -112,10 +116,10 @@ def update_assignment(
     "/{assignment_id}",
     response_model=AssignmentResponse,
 )
-
 def delete_assignment(
     module_id: int,
     assignment_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     service: AssignmentService = Depends(get_assignment_service),
 ):
@@ -123,4 +127,5 @@ def delete_assignment(
         module_id,
         assignment_id,
         current_user,
+        background_tasks,
     )

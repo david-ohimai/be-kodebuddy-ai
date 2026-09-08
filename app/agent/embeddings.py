@@ -199,6 +199,21 @@ def _get_client() -> "EmbeddingsClient":
     return _client
 
 
+def get_shared_client() -> "EmbeddingsClient":
+    """
+    Public accessor for the process-wide shared EmbeddingsClient.
+
+    Added so callers outside this module that need document-side embedding
+    (e.g. app.agent.ingestion's incremental resource/assignment sync, in
+    addition to scripts/ingest_curriculum.py which previously constructed
+    its own client) can reuse the same cached instance and the same
+    "raise loudly if GEMINI_API_KEY is missing" behaviour, instead of each
+    caller constructing its own `EmbeddingsClient()` -- one obvious call
+    site keeps that error message consistent everywhere it can occur.
+    """
+    return _get_client()
+
+
 def embed_query(text: str) -> List[float]:
     """
     Embed a single search query.
