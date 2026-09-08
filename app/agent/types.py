@@ -13,6 +13,16 @@ the graph existed on `dev`. That is now a liability rather than a convenience:
 two definitions of the same shape drift silently (the `due_date` type already
 diverged once — `date` here, ISO-8601 `str` there). `state.py` imports nothing
 from this package, so depending on it introduces no cycle.
+
+CHANGE: added `ASSIGNMENT` content type
+-----------------------------------------
+Assignments were previously not embedded at all — `get_assignment_brief` is
+a direct-by-id lookup, not a similarity search, and a learner asking a
+general question that merely *touches* an assignment (no id in context) had
+nothing to retrieve against. `ASSIGNMENT` lets assignment title/description/
+instructions/requirements be embedded and searched the same way curriculum
+and resources are (see `app.agent.tools.search_assignments`), without
+touching the existing id-based lookup path at all.
 """
 
 from __future__ import annotations
@@ -26,11 +36,12 @@ from app.agent.graph.state import (
 )
 
 # Values stored in `content_embeddings.content_type` (Dev A's table).
-ContentType = Literal["curriculum", "faq", "resource"]
+ContentType = Literal["curriculum", "faq", "resource", "assignment"]
 
 CURRICULUM: ContentType = "curriculum"
 FAQ: ContentType = "faq"
 RESOURCE: ContentType = "resource"
+ASSIGNMENT: ContentType = "assignment"
 
 
 # --------------------------------------------------------------------------
@@ -67,6 +78,7 @@ class EscalationWriteError(AgentRetrievalError):
 
 __all__ = [
     "AgentRetrievalError",
+    "ASSIGNMENT",
     "AssignmentBrief",
     "CURRICULUM",
     "ContentStoreUnavailableError",

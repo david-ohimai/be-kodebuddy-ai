@@ -28,6 +28,30 @@ def get_escalation_service(
     )
 
 
+def _to_escalation_response(escalation_data: dict) -> EscalationResponse:
+    """Convert escalation dict to response model with learner details."""
+    return EscalationResponse(
+        id=escalation_data["id"],
+        learner_id=escalation_data["learner_id"],
+        course_id=escalation_data["course_id"],
+        module_id=escalation_data.get("module_id"),
+        assignment_id=escalation_data.get("assignment_id"),
+        trainer_id=escalation_data.get("trainer_id"),
+        question=escalation_data["question"],
+        reason=escalation_data["reason"],
+        detail=escalation_data.get("detail"),
+        draft_response=escalation_data.get("draft_response"),
+        confidence_score=escalation_data.get("confidence_score"),
+        response=escalation_data.get("response"),
+        responded_at=escalation_data.get("responded_at"),
+        status=escalation_data["status"],
+        created_at=escalation_data["created_at"],
+        updated_at=escalation_data["updated_at"],
+        learner_full_name=escalation_data.get("learner_full_name"),
+        learner_email=escalation_data.get("learner_email"),
+    )
+
+
 @router.get(
     "/trainer",
     response_model=list[EscalationResponse],
@@ -39,12 +63,14 @@ def list_trainer_escalations(
     current_user: User = Depends(get_current_trainer),
     service: EscalationService = Depends(get_escalation_service),
 ):
-    return service.list_for_trainer(
+    escalations = service.list_for_trainer_with_learner(
         current_user.id,
         status=status,
         course_id=course_id,
         learner_id=learner_id,
     )
+
+    return [_to_escalation_response(esc) for esc in escalations]
 
 
 @router.get(
@@ -67,11 +93,14 @@ def list_learner_escalations(
             detail="Learner access required",
         )
 
-    return service.list_for_learner(
+    escalations = service.list_for_learner_with_learner(
         current_user.id,
         status=status_filter,
         course_id=course_id,
     )
+
+    return [_to_escalation_response(esc) for esc in escalations]
+
 
 @router.get(
     "/{escalation_id}",
@@ -87,10 +116,12 @@ def get_escalation(
     No write path here for learners -- see update_escalation below,
     which stays trainer-only."""
     if current_user.role == UserRole.TRAINER:
-        return service.get_for_trainer(current_user.id, escalation_id)
+        escalation_data = service.get_for_trainer(current_user.id, escalation_id)
+        return _to_escalation_response(escalation_data)
 
     if current_user.role == UserRole.LEARNER:
-        return service.get_for_learner(current_user.id, escalation_id)
+        escalation_data = service.get_for_learner(current_user.id, escalation_id)
+        return _to_escalation_response(escalation_data)
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -114,9 +145,19 @@ def update_escalation(
             detail="Provide a status or response update.",
         )
 
-    return service.update_for_trainer(
+    escalation = service.update_for_trainer(
         current_user.id,
         escalation_id,
         status=data.status,
         response=data.response,
     )
+
+    # Get the full details with learner info after update
+    escalation_data = service.repository.get_by_id_with_learner(escalation_id)
+    if escalation_data is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Escalation not found.",
+        )
+
+    return _to_escalation_response(escalation_data)

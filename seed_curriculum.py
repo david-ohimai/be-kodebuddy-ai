@@ -110,7 +110,7 @@ def seed_curriculum():
                 module_id=module.id,
                 title="Python Control Flow Cheat Sheet",
                 description="A quick cheat sheet summarizing python if statements and loops.",
-                type="link",  # Resource.type is now a plain str, not a ResourceType enum
+                type="link",
                 url="https://docs.python.org/3/tutorial/controlflow.html",
                 created_by=admin_id,
                 is_active=True,
