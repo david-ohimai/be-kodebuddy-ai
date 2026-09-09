@@ -4,29 +4,6 @@ article's content into real, embeddable text.
 
 Owner: Dev A (Data & Ingestion)
 
-WHY THIS EXISTS
-----------------
-The review found that ingestion "embeds the literal URL string, not the page
-it points to" and that there was no scraper or document parser anywhere in the
-codebase — `full_text` for a resource was just its title/description/URL
-concatenated. This module is the fix: given a `Resource` row, it produces the
-actual text that should be chunked and embedded, either by fetching and
-extracting readable text from a link, or by parsing an uploaded file.
-
-For ARTICLE type resources, the `content` field is used directly — no external
-fetching or parsing is needed.
-
-SECURITY: SSRF
----------------
-A trainer/admin-supplied URL is fetched *server-side*. Without guardrails
-that's a classic SSRF vector — a malicious/compromised trainer account could
-submit `http://169.254.169.254/latest/meta-data/...` (cloud metadata) or
-`http://localhost:6379` (an internal service) as a "resource link" and have
-the backend fetch it on their behalf. `_validate_public_url` resolves the
-hostname and rejects anything that isn't a public, routable IP before any
-request is made. This is defense in depth, not a substitute for network-level
-egress controls — deploy this behind an egress proxy/allowlist if your
-infrastructure supports one.
 
 SIZE / TIME BOUNDS
 ------------------
@@ -77,7 +54,7 @@ EXTRACT_STATUS_FAILED = "failed"
 @dataclass(frozen=True)
 class ExtractionResult:
     text: str
-    status: str  # "ok" | "partial" | "failed"
+    status: str  
     error: str | None = None
 
 
@@ -132,8 +109,6 @@ def _fetch_url_bytes(url: str) -> bytes:
     ) as resp:
         resp.raise_for_status()
 
-        # Re-validate the *final* URL after redirects -- a public URL can
-        # redirect to an internal one.
         if resp.url != url:
             redirect_error = _validate_public_url(resp.url)
             if redirect_error:
@@ -206,7 +181,7 @@ def extract_link_text(url: str) -> ExtractionResult:
             status=EXTRACT_STATUS_FAILED,
             error="Server misconfiguration: HTML extractor not installed.",
         )
-    except Exception as exc:  # noqa: BLE001 -- third-party parser, keep going
+    except Exception as exc:  
         logger.warning("extract_link_text: parse failed url=%s error=%s", url, exc)
         return ExtractionResult(text="", status=EXTRACT_STATUS_FAILED, error=f"Parse failed: {exc}")
 
@@ -245,7 +220,7 @@ def extract_file_text(file_path: str, mime_type: str | None, file_name: str | No
         return ExtractionResult(
             text="", status=EXTRACT_STATUS_FAILED, error="Uploaded file is missing from storage."
         )
-    except Exception as exc:  # noqa: BLE001 -- third-party parser, keep going
+    except Exception as exc:  
         logger.warning("extract_file_text: parse failed file=%s error=%s", file_path, exc)
         return ExtractionResult(text="", status=EXTRACT_STATUS_FAILED, error=f"Parse failed: {exc}")
 
@@ -262,9 +237,6 @@ def _extract_pdf(file_path: str) -> ExtractionResult:
 
     reader = PdfReader(file_path)
     if reader.is_encrypted:
-        # Try an empty password (common for "restricted but not really
-        # password-protected" PDFs); otherwise fail closed rather than
-        # guessing at a password.
         try:
             reader.decrypt("")
         except Exception:
@@ -276,7 +248,7 @@ def _extract_pdf(file_path: str) -> ExtractionResult:
     for page in reader.pages:
         try:
             pages_text.append(page.extract_text() or "")
-        except Exception as exc:  # noqa: BLE001 -- one bad page shouldn't sink the doc
+        except Exception as exc:  
             logger.warning("_extract_pdf: failed to extract a page: %s", exc)
 
     full_text = "\n\n".join(t for t in pages_text if t.strip())
@@ -293,7 +265,7 @@ def _extract_pdf(file_path: str) -> ExtractionResult:
 
 
 def _extract_docx(file_path: str) -> ExtractionResult:
-    import docx  # python-docx
+    import docx 
 
     document = docx.Document(file_path)
     parts = [p.text for p in document.paragraphs if p.text.strip()]
@@ -329,7 +301,7 @@ def _extract_plain_text(file_path: str) -> ExtractionResult:
 # --------------------------------------------------------------------------
 
 
-def build_resource_full_text(resource) -> ExtractionResult:  # type: ignore[no-untyped-def]
+def build_resource_full_text(resource) -> ExtractionResult: 
     """
     Builds the text that gets chunked/embedded for one resource.
 
@@ -343,10 +315,8 @@ def build_resource_full_text(resource) -> ExtractionResult:  # type: ignore[no-u
     """
     header = f"Resource Title: {resource.title}\nDescription: {resource.description or ''}"
 
-    # Determine resource type
     resource_type = getattr(resource, "type", None)
     if resource_type is not None:
-        # If type is an enum, get its value; if it's already a string, use it directly
         if hasattr(resource_type, "value"):
             type_value = resource_type.value
         else:
@@ -364,8 +334,6 @@ def build_resource_full_text(resource) -> ExtractionResult:  # type: ignore[no-u
                 getattr(resource, "file_name", None),
             )
             if result.status == EXTRACT_STATUS_FAILED:
-                # Header alone still makes the resource discoverable by name;
-                # only the body extraction failed.
                 return ExtractionResult(text=header, status=EXTRACT_STATUS_FAILED, error=result.error)
             return ExtractionResult(text=f"{header}\n\n{result.text}", status=result.status, error=result.error)
         else:
@@ -412,7 +380,7 @@ def build_resource_full_text(resource) -> ExtractionResult:  # type: ignore[no-u
         return ExtractionResult(text=header, status=EXTRACT_STATUS_OK, error=None)
 
 
-def build_assignment_full_text(assignment) -> str:  # type: ignore[no-untyped-def]
+def build_assignment_full_text(assignment) -> str: 
     """
     Builds the text that gets chunked/embedded for one assignment.
 

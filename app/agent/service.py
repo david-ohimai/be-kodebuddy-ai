@@ -186,34 +186,6 @@ def record_interaction(
         latency_ms=latency_ms,
     )
 
-    # NOTE (previously a bugfix for the graph's own auto-escalation path):
-    # `route` (app/agent/graph/nodes.py) used to write the escalation row
-    # itself whenever a turn wasn't confident enough, and this block existed
-    # to make sure that write also triggered notify_escalation_created --
-    # otherwise a trainer would only ever find the row by manually browsing
-    # the escalations dashboard.
-    #
-    # `route` no longer writes escalations at all (see its docstring): it
-    # only sets `escalation_available`/`escalation_reason` so the frontend
-    # can offer the learner a button, and the actual write + notification
-    # now happen exclusively inside the learner-triggered
-    # `POST /agent/escalate` endpoint (router.py::create_escalation), which
-    # already calls notify_escalation_created itself.
-    #
-    # Practically, `state.get("escalated")` is therefore never True coming
-    # out of a normal graph-driven turn today, so this block is currently
-    # inert for POST /agent/chat and POST /agent/assignment-guidance. It's
-    # kept (rather than deleted) purely as a safety net: if some future
-    # graph path (e.g. an EXPLICIT_USER_REQUEST auto-escalation) ever does
-    # set `escalated=True` directly on state again, the notification still
-    # fires correctly without anyone having to remember to re-add this.
-    #
-    # Wrapped in try/except and logged rather than raised: were this ever to
-    # fire, the escalation row would already be committed by that point, and
-    # a notification-table write failure (e.g. a bad trainer_id, a
-    # notifications-table outage) must not turn an already-successful
-    # escalation into a 500 for the learner, nor roll back a record that a
-    # trainer may still find by other means (dashboard, direct query).
     if state.get("escalated") and state.get("escalation_id") is not None:
         try:
             NotificationService(NotificationRepository(session)).notify_escalation_created(
@@ -292,9 +264,6 @@ def _run_turn(
 
     trainer_id = _resolve_trainer_id(session, course_id)
 
-    # Built fresh per request, per factory.py's own guidance: the tools
-    # inside `deps` are bound to this learner_id, so a graph built from them
-    # must never be reused across learners or cached at module scope.
     deps = AgentDependencies(
         llm=_llm_client,
         max_history_turns=AGENT_MAX_HISTORY_TURNS,
@@ -347,8 +316,20 @@ def _run_turn(
         latency_ms,
     )
 
+    final_response = result_state.get("final_response") or ""
+    draft_response = result_state.get("draft_response") or ""
+
+    if final_response.strip().startswith("{") and draft_response:
+        logger.warning(
+            "answer_chat_question/answer_assignment_guidance: final_response "
+            "still looked like raw JSON for learner=%s; falling back to "
+            "draft_response",
+            learner_id,
+        )
+        final_response = draft_response
+
     return AgentTurnResult(
-        answer=result_state.get("final_response") or "",
+        answer=final_response,
         query_type=query_type.value,
         escalated=bool(result_state.get("escalated", False)),
         escalation_id=result_state.get("escalation_id"),
@@ -359,7 +340,7 @@ def _run_turn(
             else escalation_reason
         ),
         escalation_detail=result_state.get("escalation_detail"),
-        draft_response=result_state.get("draft_response") or "",
+        draft_response=draft_response,
         confidence_score=float(result_state.get("confidence_score", 0.0)),
     )
 
