@@ -1,11 +1,3 @@
-"""
-Runs the eval set in dataset.py against the real graph wiring (build.py),
-with every external dependency faked — same approach as tests/test_graph.py,
-just driven from a table of scenarios instead of one-off test functions.
-
-Owner: Dev E (History, Observability & Evals)
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,8 +8,6 @@ from app.agent.graph.nodes import AgentDependencies
 
 from .dataset import EVAL_CASES, EvalCase
 
-# Sentinel meaning "send this exact non-JSON text to the reason node",
-# used by the parser-failure eval case.
 _RAW_NON_JSON_SENTINEL = "__RAW_NON_JSON__"
 
 
@@ -136,12 +126,5 @@ if __name__ == "__main__":
     results = run_all()
     failed = [r for r in results if not r.passed]
 
-    for r in results:
-        status = "PASS" if r.passed else "FAIL"
-        print(f"[{status}] {r.case_id}")
-        for f in r.failures:
-            print(f"    - {f}")
-
-    print(f"\n{len(results) - len(failed)}/{len(results)} eval cases passed")
     if failed:
         raise SystemExit(1)

@@ -27,7 +27,7 @@ from typing import Callable, TypeVar
 
 try:
     from langsmith import traceable as _traceable
-except ImportError:  # pragma: no cover - exercised in envs without langsmith
+except ImportError: 
     def _traceable(*_args, **_kwargs):
         def decorator(fn):
             return fn

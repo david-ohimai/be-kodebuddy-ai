@@ -86,17 +86,12 @@ class GeminiLLMClient:
         model: str | None = None,
         max_tokens: int | None = None,
     ) -> None:
-        from google import genai  # imported here so a missing `google-genai`
-        # package only breaks callers that actually construct this client.
+        from google import genai  
 
         self._client = genai.Client(api_key=api_key or GEMINI_API_KEY)
         self._model = model or AGENT_LLM_GEMINI_MODEL
         self._max_tokens = max_tokens or AGENT_LLM_GEMINI_MAX_TOKENS
 
-    # HTTP/API status codes where the *request itself* is fine and the
-    # provider just couldn't serve it a moment ago (capacity/rate-limit).
-    # These are worth a short backoff + same-config retry, never a schema
-    # downgrade -- dropping response_schema does nothing for server load.
     _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
     _TRANSIENT_RETRY_DELAY_SECONDS = 2.0
 
@@ -143,10 +138,6 @@ class GeminiLLMClient:
             )
         except errors.APIError as exc:
             if self._is_transient(exc):
-                # Server was overloaded / rate-limited -- it never actually
-                # evaluated response_schema, so retrying without it would
-                # fix nothing. Give it a brief moment to clear and retry
-                # the *identical* request once.
                 logger.warning(
                     "Gemini model %s hit a transient error (%s: %s); "
                     "retrying same request after %.1fs backoff.",
@@ -162,11 +153,6 @@ class GeminiLLMClient:
                     config=config_with_schema,
                 )
             else:
-                # A genuine config rejection -- this model/account tier
-                # doesn't support response_schema (or not combined with a
-                # system instruction). Retry once in free-text mode;
-                # nodes.py's parser still fails safe if the model doesn't
-                # comply on that attempt.
                 logger.warning(
                     "Gemini model %s rejected structured-output config "
                     "(%s: %s); retrying without response_schema "
@@ -180,10 +166,7 @@ class GeminiLLMClient:
                     contents=user,
                     config=config_without_schema,
                 )
-        except Exception as exc:  # noqa: BLE001 -- non-API error (e.g.
-            # network/SDK-internal failure) with no status code to classify.
-            # Fall back to the same "drop schema and retry once" behavior
-            # as before -- nodes.py's parser remains the backstop either way.
+        except Exception as exc:
             logger.warning(
                 "Gemini model %s raised a non-API error (%s: %s); "
                 "retrying without response_schema enforcement.",
@@ -222,8 +205,7 @@ class OpenRouterLLMClient:
         model: str | None = None,
         max_tokens: int | None = None,
     ) -> None:
-        import openai  # imported here so a missing `openai` package only
-        # breaks callers that actually construct this client.
+        import openai
 
         self._client = openai.OpenAI(
             api_key=api_key or OPENROUTER_API_KEY,
@@ -252,17 +234,7 @@ class OpenRouterLLMClient:
                     },
                 },
             )
-        except Exception as exc:  # noqa: BLE001 -- see docstring below
-            # Not every model routed through OpenRouter supports
-            # response_format=json_schema (support depends on the specific
-            # underlying model, which is caller-configured via
-            # AGENT_LLM_OPENROUTER_MODEL and can change independently of
-            # this file). Retry once with the more broadly-supported
-            # json_object mode -- guarantees syntactically valid JSON even
-            # when it can't guarantee the exact key set -- and if even that
-            # is rejected, fall through to a final plain attempt so this
-            # tier still has a chance to answer. nodes.py's parser is the
-            # backstop for whatever shape actually comes back.
+        except Exception as exc: 
             logger.warning(
                 "OpenRouter model %s rejected response_format=json_schema "
                 "(%s: %s); retrying with json_object mode.",
@@ -307,14 +279,6 @@ class FallbackLLMClient:
     rather than propagating immediately -- the cost of trying the next
     client is one extra network call, not a wrong answer.
 
-    Caveat worth knowing: app/agent/router.py's exception handling only has
-    explicit mappings for `anthropic.*` exception types today. Neither
-    Gemini nor OpenRouter is Anthropic, so if EVERY client in this chain
-    fails, the re-raised error won't match any of router.py's
-    `except anthropic.*` clauses and will surface as a generic unhandled
-    500 instead of one of the friendly mapped messages. Worth widening
-    router.py's exception handling to cover these providers' error types
-    if this chain is what you're shipping past the demo.
     """
 
     def __init__(self, clients: list) -> None:

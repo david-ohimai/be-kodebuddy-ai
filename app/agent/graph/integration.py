@@ -23,9 +23,6 @@ from typing import TYPE_CHECKING
 from app.agent.graph.nodes import AgentDependencies
 
 if TYPE_CHECKING:
-    # Only needed for the type hint below - kept out of the runtime import
-    # path so this module doesn't force SQLModel/a DB connection to be
-    # importable just to build an AgentDependencies (e.g. in tests).
     from app.agent.tools import AgentTools
 
 

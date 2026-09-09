@@ -58,18 +58,6 @@ def _handle_agent_errors(fn, *args, **kwargs):
     except NotEnrolledError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except EscalationWriteError as exc:
-        # The graph's own reasoning succeeded, but the escalation write
-        # that should have followed it failed -- Dev B's tool raises this
-        # rather than silently dropping the record, so surface it as a
-        # real error rather than returning a response that implies the
-        # escalation was recorded when it was not.
-        #
-        # HTTPException is intercepted by FastAPI's own handler before it
-        # reaches uvicorn's unhandled-exception logging path, so unlike an
-        # unhandled exception it never prints a traceback on its own --
-        # log it explicitly here or the underlying cause (e.g. a DB
-        # constraint violation) is lost, leaving only a bare "500" in the
-        # access log with no way to diagnose it after the fact.
         logger.exception("Escalation write failed: %s", exc)
         raise HTTPException(
             status_code=500,

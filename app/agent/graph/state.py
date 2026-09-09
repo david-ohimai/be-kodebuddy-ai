@@ -36,15 +36,7 @@ class EscalationReason(str, Enum):
     MODEL_UNCERTAINTY = "model_uncertainty"
     POLICY_VIOLATION = "policy_violation"
     PARSER_FAILURE = "parser_failure"
-    # The retrieval pipeline itself failed (embedding provider down, content
-    # store missing) rather than legitimately finding nothing. Kept distinct
-    # from NO_RELEVANT_CONTEXT: repeated rows in that category likely mean a
-    # curriculum content gap; repeated rows here mean the retrieval
-    # infrastructure is broken and every learner in the window was affected
-    # - those need different alerting.
     RETRIEVAL_UNAVAILABLE = "retrieval_unavailable"
-    # Reserved for a future "talk to a human" intent-detection feature.
-    # Not yet triggered anywhere in this graph.
     EXPLICIT_USER_REQUEST = "explicit_user_request"
 
 
@@ -146,43 +138,22 @@ class AgentState(TypedDict, total=False):
     course_id: int
     module_id: int | None
     assignment_id: int | None
-    # The user assigned as trainer for this learner's course/cohort.
-    # The backend has no separate `trainers` table/module - trainers,
-    # learners, mentors, and admins are all rows in one `users` table,
-    # distinguished by a role field. So this is a `users.id` value, not a
-    # dedicated "trainer" primary key — resolved upstream (Dev D, from
-    # whatever course/cohort -> assigned-trainer-user lookup the backend
-    # exposes) and passed straight through here. Optional because
-    # escalation must still work (rather than silently drop the question)
-    # if that lookup failed; None just means Dev B's escalate_to_trainer
-    # needs a fallback target.
     trainer_id: int | None
     question: str
     query_type: QueryType
-    # windowed recent history, loaded by Dev E's history logic
     chat_history: list[ChatTurn]
 
     # --- retrieve node output ---
     retrieved_chunks: list[RetrievedChunk]
     # only populated for ASSIGNMENT_GUIDANCE
     assignment_brief: AssignmentBrief | None
-    # True if `retrieve` caught an AgentRetrievalError (Dev B's tools raise
-    # this when the retrieval pipeline itself is broken, not when it
-    # legitimately finds nothing). Read by the conditional edge after
-    # `retrieve` to route straight to `retrieval_error` — see build.py.
     retrieval_failed: bool
 
     # --- reason node output (also set directly by `no_context`) ---
     draft_response: str
     model_expressed_uncertainty: bool
-    # True if the drafted response appears to violate "guide, don't solve"
-    # (see nodes.py::_violates_guide_dont_solve_policy). Only ever computed
-    # for ASSIGNMENT_GUIDANCE; always False for CHAT.
+
     policy_violation: bool
-    # True if the model's response couldn't be parsed as the expected
-    # {"answer": ..., "uncertain": ...} JSON shape. Kept distinct from
-    # model_expressed_uncertainty so a formatting failure and a genuine
-    # "the model wasn't sure" are distinguishable in telemetry.
     parser_failed: bool
 
     # --- confidence_gate node output (also set directly by `no_context`) ---
@@ -193,19 +164,6 @@ class AgentState(TypedDict, total=False):
 
     # --- route node output (final) ---
     final_response: str | None
-    # True only once an escalation row has actually been written. `route`
-    # no longer writes one itself (see nodes.py::make_route_node) — this
-    # stays False for every graph-driven turn today and is only ever True
-    # if something upstream of `route` writes an escalation and sets this
-    # directly (kept for forward compatibility / defensive completeness,
-    # not currently exercised by any node).
     escalated: bool
     escalation_id: int | None
-    # True when `route` judged the turn not confident enough to answer
-    # outright and is offering escalation as a choice, without having
-    # written anything. This is what the frontend should use to decide
-    # whether to render the "Escalate to trainer" button — distinct from
-    # `escalated`, which reflects whether a write actually happened. A
-    # learner tapping that button hits POST /agent/escalate separately;
-    # nothing in the graph observes that follow-up call.
     escalation_available: bool
