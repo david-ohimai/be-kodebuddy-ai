@@ -20,11 +20,6 @@ different name, add an alias in `embeddings.py` or change
 `_EMBED_FUNCTION_NAMES` below — the rest of the retrieval layer does not need
 to know.
 
-For local development before that module lands, set
-`AGENT_FAKE_EMBEDDINGS=1` to use a deterministic stub. It produces stable
-vectors so RBAC and SQL wiring can be exercised end to end, but the similarity
-ordering it yields is meaningless — never enable it outside local testing.
-
 QUERY-LEVEL CACHE
 ------------------
 Every graph turn calls this module's `embed_query` twice with the *identical*
@@ -55,17 +50,10 @@ from app.agent.types import EmbeddingUnavailableError
 
 logger = logging.getLogger(__name__)
 
-# Names tried, in order, when looking for Dev A's embedding entry point.
 _EMBED_FUNCTION_NAMES = ("embed_query", "embed_text", "embed")
 
-# Dimensionality of the stub vectors. Only used when AGENT_FAKE_EMBEDDINGS=1.
 _FAKE_EMBEDDING_DIM = 1024
 
-# Bounds the query-level embedding cache described in the module docstring.
-# Sized for "the same question embedded twice within one turn" (the actual
-# problem this fixes), not as a long-lived semantic cache -- 256 distinct
-# in-flight query strings is generous headroom for that without holding
-# onto memory indefinitely across a long process lifetime.
 _EMBED_CACHE_SIZE = 256
 
 _cached_embedder: Callable[[str], Sequence[float]] | None = None
@@ -83,7 +71,6 @@ def _fake_embed(text: str) -> list[float]:
     counter = 0
     while len(values) < _FAKE_EMBEDDING_DIM:
         block = hashlib.sha256(digest + struct.pack(">I", counter)).digest()
-        # 8 bytes -> one float in [-1, 1), 8 floats per 64-byte block.
         for offset in range(0, len(block), 8):
             chunk = block[offset : offset + 8]
             (raw,) = struct.unpack(">Q", chunk)
@@ -93,7 +80,7 @@ def _fake_embed(text: str) -> list[float]:
         counter += 1
 
     norm = math.sqrt(sum(value * value for value in values))
-    if norm == 0.0:  # unreachable in practice, guards against a zero vector
+    if norm == 0.0: 
         return values
     return [value / norm for value in values]
 
@@ -147,7 +134,7 @@ def _embed_query_cached(text: str) -> tuple[float, ...]:
         vector = _cached_embedder(text)
     except EmbeddingUnavailableError:
         raise
-    except Exception as exc:  # provider-specific failures (HTTP, auth, quota)
+    except Exception as exc: 
         raise EmbeddingUnavailableError(
             f"Embedding provider failed for query: {exc}"
         ) from exc

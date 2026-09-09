@@ -131,7 +131,7 @@ def sync_source(
             and existing.content_hash == h
             and existing.embedding_model == embed_client.model
         ):
-            continue  # unchanged, same model -- leave the row exactly as-is
+            continue  
         if existing is not None:
             existing.text = chunk_body
             existing.content_hash = h
@@ -279,7 +279,6 @@ def sync_resource_embeddings(resource_id: int) -> None:
                 )
                 return
 
-            # Determine the course_id from the module
             module = session.get(Module, resource.module_id)
             if module is None:
                 logger.warning(
@@ -293,7 +292,6 @@ def sync_resource_embeddings(resource_id: int) -> None:
             try:
                 embed_client = get_shared_client()
             except ValueError:
-                # GEMINI_API_KEY not configured in this environment.
                 logger.error(
                     "sync_resource_embeddings: embeddings client unavailable "
                     "(missing GEMINI_API_KEY) -- resource %s was NOT "
@@ -333,7 +331,7 @@ def sync_resource_embeddings(resource_id: int) -> None:
                 updated,
                 deleted,
             )
-    except Exception:  # noqa: BLE001 -- background task, must never raise
+    except Exception: 
         logger.exception(
             "sync_resource_embeddings: unhandled failure for resource_id=%s",
             resource_id,

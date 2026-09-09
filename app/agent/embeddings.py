@@ -1,17 +1,6 @@
 """
 Embeddings client, backed by Gemini's embedding model (gemini-embedding-001).
 
-No mock/fallback mode: a previous version of this module silently generated
-meaningless hash-derived pseudo-random vectors whenever the API key was
-missing or looked like a placeholder. That's exactly the kind of failure
-that should be loud, not quiet -- a missing key now raises immediately at
-construction (ValueError), the same way a missing DATABASE_URL or
-AUTH_SECRET_KEY already does elsewhere in this app, instead of degrading
-retrieval into semantic noise that's indistinguishable from a real (if
-poorly-scoring) result. If you need a stand-in for tests, use an explicit
-test double (e.g. unittest.mock.patch / a hand-written fake implementing
-the same embed_text/embed_texts interface) rather than a code path that can
-also silently activate in production.
 """
 
 from __future__ import annotations
@@ -28,18 +17,11 @@ from app.core.config import (
 
 logger = logging.getLogger("kodebuddy.agent.embeddings")
 
-# Retry policy for transient Gemini failures (rate limits, overload, 5xx).
-# Mirrors app/agent/llm.py's GeminiLLMClient: a request-scoped capacity
-# hiccup should get a short backoff + retry, not immediately fail the whole
-# ingestion/retrieval path.
+
 _MAX_ATTEMPTS = 3
 _RETRY_BASE_DELAY_SECONDS = 1.0
 _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 
-# input_type -> Gemini task_type. "document" is for content being indexed
-# (ingestion), "query" is for what a learner typed (retrieval) -- Gemini,
-# like Voyage before it, embeds these two roles slightly differently to
-# improve retrieval quality, so getting this mapping right matters.
 _TASK_TYPE_BY_INPUT_TYPE = {
     "document": "RETRIEVAL_DOCUMENT",
     "query": "RETRIEVAL_QUERY",
@@ -85,7 +67,7 @@ def _call_with_retry(fn, *args, **kwargs):
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             return fn(*args, **kwargs)
-        except Exception as exc:  # noqa: BLE001 -- classified by _is_retryable
+        except Exception as exc: 
             last_exc = exc
             if attempt == _MAX_ATTEMPTS or not _is_retryable(exc):
                 raise
@@ -100,7 +82,7 @@ def _call_with_retry(fn, *args, **kwargs):
                 delay,
             )
             time.sleep(delay)
-    assert last_exc is not None  # unreachable -- loop always returns or raises
+    assert last_exc is not None 
     raise last_exc
 
 
@@ -126,8 +108,7 @@ class EmbeddingsClient:
         model: str | None = None,
         dimension: int | None = None,
     ) -> None:
-        from google import genai  # imported here so a missing `google-genai`
-        # package only breaks callers that actually construct this client.
+        from google import genai  
 
         resolved_key = api_key or GEMINI_API_KEY
         if not resolved_key:

@@ -259,10 +259,6 @@ class AgentRepository:
 
         effective_limit = max(1, min(int(limit), MAX_SEARCH_LIMIT))
 
-        # Normalise a single content_type or a sequence of them into a list
-        # for the SQL `= ANY(...)` check below. `None` means "don't filter
-        # on content_type at all" and must stay `None` (not `[None]`), or
-        # every row would be excluded.
         content_types: list[str] | None
         if content_type is None:
             content_types = None
@@ -271,8 +267,6 @@ class AgentRepository:
         else:
             content_types = list(content_type)
 
-        # `<=>` is pgvector's cosine *distance*; similarity is 1 - distance.
-        # Ordering by the raw distance lets an ANN index be used if present.
         statement = text(
             f"""
             SELECT
@@ -340,8 +334,6 @@ class AgentRepository:
         try:
             rows = self.session.execute(statement, params).mappings().all()
         except ProgrammingError as exc:
-            # A failed statement aborts the transaction; roll back so the
-            # session stays usable for the caller's error handling.
             self.session.rollback()
             if _is_missing_relation(exc):
                 raise ContentStoreUnavailableError(
@@ -354,10 +346,6 @@ class AgentRepository:
         chunks: list[RetrievedChunk] = [
             {
                 "chunk_id": str(row["chunk_id"]),
-                # None for global FAQ content, which belongs to no course.
-                # NOTE: Dev C's RetrievedChunk types this as `int`; it needs
-                # to become `int | None`, exactly as `module_id` already is.
-                # Raised with Dev C — see the FAQ note in the module docstring.
                 "course_id": (
                     int(row["course_id"]) if row["course_id"] is not None else None
                 ),
@@ -439,8 +427,6 @@ class AgentRepository:
         except ProgrammingError as exc:
             self.session.rollback()
             if _is_missing_relation(exc):
-                # assignments/modules are backend-team tables; treat a missing
-                # one as "no brief available" so chat still works without them.
                 logger.warning(
                     "Assignment lookup skipped — a required table is missing: %s",
                     exc,
@@ -457,11 +443,6 @@ class AgentRepository:
             )
             return None
 
-        # `description` is NOT NULL in Dev C's AssignmentBrief and is joined
-        # straight into the prompt (prompts/assignment_guidance.py), so a NULL
-        # from the DB would raise a TypeError mid-render. Ginikanwa's model
-        # allows it to be null, so coerce here and say so in the log rather
-        # than letting an incomplete assignment break guidance entirely.
         description = row["description"]
         if description is None:
             logger.warning(
@@ -469,24 +450,11 @@ class AgentRepository:
                 row["assignment_id"],
             )
             description = ""
-
-        # ISO 8601 *date* string, not a datetime: AssignmentBrief keeps itself
-        # free of any datetime dependency so it serialises cleanly across a
-        # process boundary, and Dev C's prompt renders it verbatim as
-        # "Due: {due_date}". `assignments.due_date` is a DATETIME column, so
-        # calling .isoformat() on it directly would put
-        # "2026-09-01T00:00:00+00:00" into the prompt instead of "2026-09-01".
         due_date = row["due_date"]
         if due_date is not None and not isinstance(due_date, str):
             if hasattr(due_date, "date"):  # datetime -> date
                 due_date = due_date.date()
             due_date = due_date.isoformat()
-
-        # `assignments.maximum_score` is a FLOAT, but Dev C's AssignmentBrief
-        # types it as int. Truncating with int() would silently turn a
-        # maximum of 92.5 into 92 and show the learner the wrong total, so
-        # narrow to int only when the value is exactly integral and keep the
-        # float otherwise. Raised with Dev C to widen the annotation.
         maximum_score = row["maximum_score"]
         if maximum_score is not None:
             maximum_score = float(maximum_score)
@@ -559,27 +527,12 @@ class AgentRepository:
         if reason is None:
             raise EscalationWriteError("An escalation requires a reason.")
 
-        # Accept either the enum or its value, so a caller that has already
-        # unwrapped it (or loaded one from JSON) still writes a valid row.
         reason_value = (
             reason.value if isinstance(reason, EscalationReason) else str(reason)
         )
         if not reason_value.strip():
             raise EscalationWriteError("An escalation requires a reason.")
 
-        # NOTE: `updated_at` is NOT NULL with no server-side default (see
-        # migration 95bb2c9b27c6). It must be listed explicitly here --
-        # Escalation.updated_at's `default_factory` in model.py only fires
-        # when SQLModel's ORM builds the INSERT (session.add(...)), which
-        # this raw `text()` statement bypasses. Omitting it previously
-        # caused every escalation write to fail with a NotNullViolation,
-        # rolled back and reported to the caller as a generic 500 with no
-        # detail (see EscalationWriteError handling in router.py).
-        #
-        # module_id/assignment_id/draft_response/confidence_score are all
-        # nullable (migration a1c2e3f4b5d6) -- a caller that doesn't have
-        # one (e.g. an older frontend build, or a CHAT turn with no
-        # module_id) simply gets NULL there rather than a failed write.
         statement = text(
             f"""
             INSERT INTO {ESCALATIONS_TABLE}
