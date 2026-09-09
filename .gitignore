@@ -11,3 +11,4 @@ kodebuddy-ai-be.env
 .DS_Store
 tmp/
 *.db
+uploads/*

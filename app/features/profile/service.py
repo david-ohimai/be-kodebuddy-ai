@@ -319,6 +319,13 @@ class ProfileService:
         old_role = user.role
         new_role = data.role
 
+        # Admin roles cannot be changed
+        if old_role == UserRole.ADMIN:
+            raise HTTPException(
+                status_code=403,
+                detail="Admin role cannot be changed",
+            )
+        
         user.role = new_role
         user.updated_at = datetime.now(timezone.utc)
 
