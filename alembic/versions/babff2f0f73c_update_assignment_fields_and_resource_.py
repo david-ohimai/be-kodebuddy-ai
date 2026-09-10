@@ -1,7 +1,7 @@
 """update assignment fields and resource type
 
 Revision ID: babff2f0f73c
-Revises: b7d3e9f1a2c4
+Revises: 755b676f1992
 Create Date: 2026-08-27 14:26:22.030099
 """
 

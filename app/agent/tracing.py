@@ -1,25 +1,3 @@
-"""
-LangSmith tracing for the agent graph.
-
-Owner: Dev E (History, Observability & Evals)
-
-Per the note in graph/build.py, tracing is added by wrapping the callables
-passed into `AgentDependencies` and by wrapping each node function before it
-is added to the graph — this module does both, and neither nodes.py nor
-build.py needs to change.
-
-Enabling tracing is purely environment-driven (standard LangSmith behavior):
-
-    LANGCHAIN_TRACING_V2=true
-    LANGCHAIN_API_KEY=...
-    LANGCHAIN_PROJECT=kodebuddy-agent   # optional, defaults to "default"
-
-If the `langsmith` package isn't installed, or tracing isn't enabled, every
-wrapper in this module degrades to a plain passthrough — so importing this
-module is always safe, including in tests and in environments without a
-LangSmith account.
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -27,7 +5,7 @@ from typing import Callable, TypeVar
 
 try:
     from langsmith import traceable as _traceable
-except ImportError: 
+except ImportError:
     def _traceable(*_args, **_kwargs):
         def decorator(fn):
             return fn
@@ -54,11 +32,6 @@ def _traced(name: str, run_type: str) -> Callable[[F], F]:
 
 
 def traced_dependencies(deps: AgentDependencies) -> AgentDependencies:
-    """
-    Returns a copy of `deps` with every injected callable wrapped in
-    `@traceable`, so each retrieval/tool/LLM call shows up as its own run in
-    the LangSmith trace tree for a request.
-    """
     llm = deps.llm
     traced_llm_complete = _traced("agent.llm.complete", "llm")(llm.complete)
 
@@ -75,6 +48,9 @@ def traced_dependencies(deps: AgentDependencies) -> AgentDependencies:
         search_faqs=_traced(
             "agent.tool.search_faqs", "retriever"
         )(deps.search_faqs),
+        search_assignments=_traced(
+            "agent.tool.search_assignments", "retriever"
+        )(deps.search_assignments),
         get_assignment_brief=_traced(
             "agent.tool.get_assignment_brief", "tool"
         )(deps.get_assignment_brief),
@@ -85,13 +61,6 @@ def traced_dependencies(deps: AgentDependencies) -> AgentDependencies:
 
 
 def _route_after_retrieve(state: AgentState) -> str:
-    """Kept in sync with graph/build.py's `_route_after_retrieve` (that one
-    stays private/`_`-prefixed there, so this module keeps its own copy
-    rather than importing an implementation detail Dev C hasn't committed
-    to keeping stable) — but it MUST implement the same three-way branch,
-    including the `retrieval_failed` check, or a genuine retrieval
-    infrastructure outage silently gets traced as a plain "no context"
-    escalation instead of the distinct `retrieval_error` case."""
     if state.get("retrieval_failed"):
         return "retrieval_error"
 
@@ -104,16 +73,6 @@ def _route_after_retrieve(state: AgentState) -> str:
 
 
 def build_traced_agent_graph(deps: AgentDependencies):
-    """
-    Same wiring as `build_agent_graph` (graph/build.py), but every node is
-    wrapped in `@traceable` so a LangSmith trace shows each graph step
-    (retrieve / reason / confidence_gate / no_context / retrieval_error /
-    route) as its own span, nested under the run for the overall
-    graph.invoke() call.
-
-    `deps` is also passed through `traced_dependencies` first, so tool/LLM
-    calls nest correctly under their calling node in the trace tree.
-    """
     traced_deps = traced_dependencies(deps)
 
     graph = StateGraph(AgentState)
