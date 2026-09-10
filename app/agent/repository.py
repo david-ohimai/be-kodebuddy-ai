@@ -69,21 +69,6 @@ that needs to change.
         status            text not null     -- 'open' on insert
         created_at        timestamptz not null
 
-    NOTE FOR DEV A: `trainer_id` and `detail` are additions since the first
-    draft of this contract, and come from Dev C's `EscalateToTrainerFn` in
-    graph/contracts.py — the graph resolves a trainer upstream and passes a
-    structured `EscalationReason` plus free-form `detail`. `trainer_id` must be
-    NULLABLE: the graph deliberately escalates even when that lookup failed,
-    rather than dropping the learner's question, and those rows are the
-    unassigned-escalations queue.
-
-    NOTE: `module_id`, `assignment_id`, `draft_response`, `confidence_score`
-    (migration a1c2e3f4b5d6) are later additions, added once it became clear
-    a trainer looking at an escalation with only `question`/`reason` had no
-    way to tell what the agent actually attempted or which part of the
-    course it came from. All four are nullable and populated from whatever
-    the frontend already had on the originating chat turn -- no learner
-    ever re-types this data.
 """
 
 from __future__ import annotations
@@ -110,31 +95,17 @@ from app.agent.types import (
 
 logger = logging.getLogger(__name__)
 
-# --- Dev A's schema contract (see module docstring) ------------------------
 EMBEDDINGS_TABLE = "content_embeddings"
 EMBEDDINGS_TEXT_COLUMN = "text"
 EMBEDDINGS_VECTOR_COLUMN = "embedding"
 ESCALATIONS_TABLE = "escalations"
 
-# Default number of chunks returned by a similarity search.
 DEFAULT_SEARCH_LIMIT = 5
-
-# Hard ceiling, so a caller cannot ask for an unbounded result set.
 MAX_SEARCH_LIMIT = 50
-
-# Status assigned to a newly created escalation.
 ESCALATION_STATUS_OPEN = "open"
 
 
 def _is_missing_relation(exc: ProgrammingError) -> bool:
-    """
-    True when a ProgrammingError is Postgres complaining that a relation or
-    type does not exist — i.e. Dev A's migration has not been applied.
-
-    Matched on the SQLSTATE code where psycopg exposes one (42P01 undefined
-    table, 42704 undefined object, 42883 undefined function — the last covers
-    a missing pgvector `<=>` operator), and on the message text otherwise.
-    """
     sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
     if sqlstate in {"42P01", "42704", "42883"}:
         return True
@@ -147,33 +118,13 @@ def _is_missing_relation(exc: ProgrammingError) -> bool:
 
 
 class AgentRepository:
-    """
-    Database access for the agent, scoped to a single learner.
-
-    The learner id is supplied once, at construction, and every query in this
-    class filters on it. Constructing one of these per request is the intended
-    usage — see `app.agent.tools.factory.AgentTools`.
-    """
-
     def __init__(self, session: Session, learner_id: int) -> None:
         if learner_id is None:
             raise ValueError("learner_id is required — RBAC cannot be skipped.")
         self.session = session
         self.learner_id = int(learner_id)
 
-    # ------------------------------------------------------------------
-    # Enrollment
-    # ------------------------------------------------------------------
-
     def is_enrolled(self, course_id: int) -> bool:
-        """
-        Whether this learner is assigned to an active course.
-
-        Uses direct course assignment (`course_learners`) as the authority,
-        which is what the design document means by "courses they're actually
-        assigned to". Cohort membership is deliberately *not* treated as
-        implying course access — see the note in `enrolled_course_ids`.
-        """
         statement = text(
             """
             SELECT 1
@@ -192,16 +143,6 @@ class AgentRepository:
         return row is not None
 
     def enrolled_course_ids(self) -> list[int]:
-        """
-        Every active course this learner is assigned to.
-
-        NOTE FOR REVIEW: `cohort_learners` also exists and carries an
-        `is_active` flag. We do not consult it here, because a learner in a
-        cohort is not necessarily assigned every course in that cohort —
-        `course_learners` is the explicit grant. If the team decides cohort
-        membership should also confer access, this is the single method to
-        change; every read below derives its scope from the same join.
-        """
         statement = text(
             """
             SELECT cl.course_id
@@ -217,10 +158,6 @@ class AgentRepository:
         ).all()
         return [int(row[0]) for row in rows]
 
-    # ------------------------------------------------------------------
-    # Vector search
-    # ------------------------------------------------------------------
-
     def search_content(
         self,
         *,
@@ -231,29 +168,6 @@ class AgentRepository:
         limit: int = DEFAULT_SEARCH_LIMIT,
         min_score: float | None = None,
     ) -> list[RetrievedChunk]:
-        """
-        Similarity search over embedded content, scoped to this learner.
-
-        The `course_learners` join is the access control. Passing a
-        `course_id` the learner is not enrolled in yields an empty list rather
-        than an error, so callers cannot probe for the existence of content in
-        other courses.
-
-        Args:
-            query_embedding: the embedded search query.
-            course_id: restrict to one course. When None, searches every course
-                the learner is enrolled in.
-            module_id: restrict to one module within the course.
-            content_type: 'curriculum', 'faq', or 'resource' — a single value,
-                a sequence of values (e.g. search curriculum *and* resource
-                content in one call), or None to search every content type.
-            limit: maximum chunks to return (clamped to MAX_SEARCH_LIMIT).
-            min_score: drop chunks whose cosine similarity is below this.
-
-        Raises:
-            ContentStoreUnavailableError: the embeddings table or the pgvector
-                extension is not present.
-        """
         if not query_embedding:
             raise ValueError("query_embedding must be a non-empty vector.")
 
@@ -279,11 +193,6 @@ class AgentRepository:
                                                         AS score
             FROM {EMBEDDINGS_TABLE} ce
             WHERE (
-                    -- Global content: belongs to no single course. ONLY FAQ
-                    -- content may be global (see module docstring); a NULL
-                    -- course_id on any other content type is unreachable
-                    -- rather than universally visible, so a bad ingestion
-                    -- row fails closed.
                     (ce.course_id IS NULL
                      AND ce.content_type = CAST(:global_content_type AS TEXT))
                     OR EXISTS (
@@ -300,8 +209,6 @@ class AgentRepository:
                    OR ce.course_id IS NULL)
               AND (CAST(:module_id AS INTEGER) IS NULL
                    OR ce.module_id = CAST(:module_id AS INTEGER))
-              -- Content in a deactivated module must stop grounding answers.
-              -- module_id is NULL for global FAQ content, which has no module.
               AND (ce.module_id IS NULL
                    OR EXISTS (
                         SELECT 1
@@ -369,23 +276,7 @@ class AgentRepository:
         )
         return chunks
 
-    # ------------------------------------------------------------------
-    # Assignments
-    # ------------------------------------------------------------------
-
     def get_assignment(self, assignment_id: int) -> AssignmentBrief | None:
-        """
-        Fetch one assignment, if this learner is entitled to see it.
-
-        Assignments hang off a module, and the module carries the course, so
-        entitlement is `assignment -> module -> course -> course_learners`.
-
-        Returns None both when the assignment does not exist and when the
-        learner is not entitled to it. The two are deliberately
-        indistinguishable to the caller so an unauthorised learner cannot use
-        this to discover which assignment ids are real; the distinction is
-        logged server-side instead.
-        """
         statement = text(
             """
             SELECT
@@ -452,7 +343,7 @@ class AgentRepository:
             description = ""
         due_date = row["due_date"]
         if due_date is not None and not isinstance(due_date, str):
-            if hasattr(due_date, "date"):  # datetime -> date
+            if hasattr(due_date, "date"):
                 due_date = due_date.date()
             due_date = due_date.isoformat()
         maximum_score = row["maximum_score"]
@@ -471,10 +362,6 @@ class AgentRepository:
             "maximum_score": maximum_score,
         }
 
-    # ------------------------------------------------------------------
-    # Escalations
-    # ------------------------------------------------------------------
-
     def create_escalation(
         self,
         *,
@@ -488,40 +375,6 @@ class AgentRepository:
         draft_response: str | None = None,
         confidence_score: float | None = None,
     ) -> int:
-        """
-        Persist an escalation for the trainer dashboard and return its id.
-
-        Committed immediately: an escalation is the record that a learner asked
-        something the agent could not answer, and it must survive even if the
-        rest of the request subsequently fails.
-
-        Args:
-            course_id: the course the question was asked against.
-            question: the learner's original question, stored verbatim.
-            reason: structured category, so escalations can be aggregated
-                without parsing prose.
-            trainer_id: resolved upstream by Dev D. None is valid and lands the
-                row in the unassigned queue — never a reason to refuse the
-                write, since a dropped escalation strands the learner.
-            module_id: the module the question was asked in, if any --
-                round-tripped from the originating chat turn so the trainer
-                can jump straight to the relevant content instead of only
-                knowing the course.
-            assignment_id: the assignment the question was asked about, if
-                any -- same rationale as module_id, populated only for
-                ASSIGNMENT_GUIDANCE turns.
-            detail: free-form context for the reason (e.g. the top score).
-            draft_response: the agent's own best-effort answer, if it had
-                one and it was safe to surface (never populated for a
-                POLICY_VIOLATION reason -- see
-                app/agent/graph/nodes.py::route). Gives the trainer
-                something concrete to react to, not just a bare question.
-            confidence_score: the graph's confidence_score (0.0-1.0) for
-                that draft, if any.
-
-        Raises:
-            EscalationWriteError: if the row could not be written.
-        """
         if not question or not question.strip():
             raise EscalationWriteError("Cannot escalate an empty question.")
         if reason is None:
@@ -618,20 +471,7 @@ class AgentRepository:
         return escalation_id
 
 
-# ----------------------------------------------------------------------
-# Conversation history & query logs (formerly app/agent/history_repository.py)
-# Owner: Dev E (History, Observability & Evals)
-# ----------------------------------------------------------------------
-
 class ConversationHistoryRepository:
-    """
-    Read/write access to `conversation_history`.
-
-    Scoped to a single learner at construction time, matching the RBAC
-    pattern in app/agent/repository.py (Dev B): a caller physically cannot
-    read or write another learner's history through this class.
-    """
-
     def __init__(self, session: Session, learner_id: int) -> None:
         self.session = session
         self.learner_id = int(learner_id)
@@ -643,6 +483,7 @@ class ConversationHistoryRepository:
         module_id: int | None,
         role: ChatRole,
         message: str,
+        retrieved_assignment_content: bool = False,
     ) -> ConversationHistory:
         turn = ConversationHistory(
             learner_id=self.learner_id,
@@ -650,6 +491,7 @@ class ConversationHistoryRepository:
             module_id=module_id,
             role=role,
             message=message,
+            retrieved_assignment_content=retrieved_assignment_content,
         )
         self.session.add(turn)
         self.session.commit()
@@ -663,10 +505,8 @@ class ConversationHistoryRepository:
         module_id: int | None,
         question: str,
         final_response: str,
+        retrieved_assignment_content: bool = False,
     ) -> None:
-        """Convenience wrapper: writes the learner's question and the
-        agent's final_response as two turns in one call, which is the
-        common case after a single graph.invoke()."""
         self.session.add(
             ConversationHistory(
                 learner_id=self.learner_id,
@@ -674,6 +514,7 @@ class ConversationHistoryRepository:
                 module_id=module_id,
                 role=ChatRole.USER,
                 message=question,
+                retrieved_assignment_content=retrieved_assignment_content,
             )
         )
         self.session.add(
@@ -683,6 +524,7 @@ class ConversationHistoryRepository:
                 module_id=module_id,
                 role=ChatRole.ASSISTANT,
                 message=final_response,
+                retrieved_assignment_content=retrieved_assignment_content,
             )
         )
         self.session.commit()
@@ -694,16 +536,6 @@ class ConversationHistoryRepository:
         module_id: int | None = None,
         limit: int = 6,
     ) -> list[ConversationHistory]:
-        """
-        Returns the most recent `limit` turns, oldest first — the order the
-        graph's prompt builders expect (see graph/utils.py callers in
-        nodes.py::reason).
-
-        module_id is deliberately NOT filtered on: chat_history is meant to
-        carry conversational context across a course, not just within one
-        module, so a module-scoped question can still see a prior turn asked
-        against a different module in the same course.
-        """
         statement = (
             select(ConversationHistory)
             .where(ConversationHistory.learner_id == self.learner_id)
@@ -722,7 +554,6 @@ class ConversationHistoryRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ConversationHistory], int]:
-        """Paginated, newest-first history for GET /agent/history."""
         base = select(ConversationHistory).where(
             ConversationHistory.learner_id == self.learner_id
         )
@@ -744,9 +575,6 @@ class ConversationHistoryRepository:
 
 
 class QueryLogRepository:
-    """Write-side access to `query_logs`. No RBAC scoping needed here — it's
-    written internally by the agent service, never taken from a request."""
-
     def __init__(self, session: Session) -> None:
         self.session = session
 

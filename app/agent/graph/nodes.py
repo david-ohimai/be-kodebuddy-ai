@@ -19,7 +19,11 @@ from app.agent.graph.state import (
     QueryType,
     RetrievedChunk,
 )
-from app.agent.graph.utils import chunk_score, chunk_text
+from app.agent.graph.utils import (
+    chat_turn_retrieved_assignment_content,
+    chunk_score,
+    chunk_text,
+)
 from app.agent.prompts.assignment_guidance import (
     ASSIGNMENT_GUIDANCE_SYSTEM_PROMPT,
     build_assignment_user_turn,
@@ -37,6 +41,8 @@ logger = logging.getLogger("kodebuddy.agent.graph")
 MIN_RETRIEVAL_SCORE = 0.55
 MIN_CONFIDENT_TOP_SCORE = 0.62
 POLICY_VIOLATION_LINE_THRESHOLD = 4
+POLICY_VIOLATION_TAG_THRESHOLD = POLICY_VIOLATION_LINE_THRESHOLD * 2
+ASSIGNMENT_CONTENT_TYPE = "assignment"
 
 _ESCALATE_CTA_WITH_DRAFT = (
     "If that doesn't cover it, you can escalate this question to your "
@@ -281,6 +287,7 @@ def _parse_llm_response(raw_text: str) -> tuple[str, bool, bool]:
 
 
 _CODE_BLOCK_PATTERN = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
+_INLINE_TAG_DENSITY_PATTERN = re.compile(r"<[a-zA-Z][^>]*>")
 
 
 def _violates_guide_dont_solve_policy(answer: str) -> bool:
@@ -288,7 +295,27 @@ def _violates_guide_dont_solve_policy(answer: str) -> bool:
         non_empty_lines = [line for line in block.splitlines() if line.strip()]
         if len(non_empty_lines) > POLICY_VIOLATION_LINE_THRESHOLD:
             return True
+
+    tag_matches = _INLINE_TAG_DENSITY_PATTERN.findall(answer)
+    if len(tag_matches) > POLICY_VIOLATION_TAG_THRESHOLD:
+        return True
+
     return False
+
+
+def _assignment_content_in_play(state: AgentState) -> bool:
+    current_turn = any(
+        chunk.get("content_type") == ASSIGNMENT_CONTENT_TYPE
+        for chunk in state.get("retrieved_chunks", [])
+        if chunk_score(chunk) >= MIN_RETRIEVAL_SCORE
+    )
+    if current_turn:
+        return True
+
+    return any(
+        chat_turn_retrieved_assignment_content(turn)
+        for turn in state.get("chat_history", [])
+    )
 
 
 def make_reason_node(deps: AgentDependencies):
@@ -323,13 +350,17 @@ def make_reason_node(deps: AgentDependencies):
         answer, uncertain, parser_failed = _parse_llm_response(raw)
 
         policy_violation = False
-        if query_type == QueryType.ASSIGNMENT_GUIDANCE and not parser_failed:
+        if not parser_failed and (
+            query_type == QueryType.ASSIGNMENT_GUIDANCE
+            or _assignment_content_in_play(state)
+        ):
             policy_violation = _violates_guide_dont_solve_policy(answer)
             if policy_violation:
                 logger.warning(
                     "reason: learner=%s response flagged for guide-dont-solve "
-                    "policy violation",
+                    "policy violation (query_type=%s)",
                     state["learner_id"],
+                    query_type.value if query_type else None,
                 )
 
         return {

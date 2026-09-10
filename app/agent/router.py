@@ -44,6 +44,19 @@ def get_history_repository(
     return ConversationHistoryRepository(session, learner_id=current_user.id)
 
 
+def _resolve_escalation_reason(raw_reason: str) -> EscalationReason:
+    try:
+        return EscalationReason(raw_reason)
+    except ValueError:
+        pass
+
+    normalized = raw_reason.lower().replace(" ", "_").replace("-", "_")
+    try:
+        return EscalationReason(normalized)
+    except ValueError:
+        return EscalationReason.OTHER
+
+
 def _handle_agent_errors(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
@@ -139,14 +152,20 @@ def create_escalation(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_learner),
 ):
-    reason_value = body.reason.strip()
-    try:
-        reason = EscalationReason(reason_value)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid escalation reason: {reason_value}",
-        ) from exc
+    raw_reason = body.reason.strip()
+    reason = _resolve_escalation_reason(raw_reason)
+
+    if reason == EscalationReason.OTHER and raw_reason.lower() != "other":
+        logger.info(
+            "create_escalation: unrecognized reason %r from learner=%s; "
+            "falling back to OTHER.",
+            raw_reason,
+            current_user.id,
+        )
+        if body.detail:
+            body.detail = f"(original reason: {raw_reason}) {body.detail}"
+        else:
+            body.detail = f"original reason: {raw_reason}"
 
     repository = AgentRepository(session, learner_id=current_user.id)
     if not repository.is_enrolled(body.course_id):
