@@ -43,6 +43,9 @@ def _make_deps(case: EvalCase) -> AgentDependencies:
     def search_faqs(*, query, course_id):
         return case.faq_hits
 
+    def search_assignments(*, query, course_id, module_id=None):
+        return []
+
     def get_assignment_brief(assignment_id):
         return case.assignment_brief
 
@@ -55,6 +58,7 @@ def _make_deps(case: EvalCase) -> AgentDependencies:
         llm=_make_llm(case),
         search_curriculum=search_curriculum,
         search_faqs=search_faqs,
+        search_assignments=search_assignments,
         get_assignment_brief=get_assignment_brief,
         escalate_to_trainer=escalate_to_trainer,
     )

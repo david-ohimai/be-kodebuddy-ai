@@ -1,6 +1,7 @@
 import logging
 
-import anthropic
+import openai
+from google.genai import errors as genai_errors
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
@@ -44,15 +45,6 @@ def get_history_repository(
 
 
 def _handle_agent_errors(fn, *args, **kwargs):
-    """
-    Shared exception-to-HTTP-status mapping for the agent endpoint below.
-
-    NotEnrolledError/EscalationWriteError are this app's own domain
-    exceptions (service.py, app.agent.types respectively); the anthropic.*
-    exceptions mirror the mapping already established in Dev B's
-    scripts/agent_tools_demo.py harness, applied here to the real request
-    path instead of a CLI script.
-    """
     try:
         return fn(*args, **kwargs)
     except NotEnrolledError as exc:
@@ -63,31 +55,47 @@ def _handle_agent_errors(fn, *args, **kwargs):
             status_code=500,
             detail="Failed to record an escalation for this question.",
         ) from exc
-    except anthropic.AuthenticationError as exc:
+    except openai.AuthenticationError as exc:
         logger.exception("Agent LLM authentication failed: %s", exc)
         raise HTTPException(
             status_code=500,
             detail="Agent LLM is misconfigured (authentication failed).",
         ) from exc
-    except anthropic.RateLimitError as exc:
+    except openai.RateLimitError as exc:
         logger.warning("Agent LLM rate-limited: %s", exc)
         raise HTTPException(
             status_code=429,
             detail="Agent is temporarily rate-limited. Try again shortly.",
         ) from exc
-    except anthropic.APIConnectionError as exc:
+    except openai.APIConnectionError as exc:
         logger.exception("Could not reach agent LLM provider: %s", exc)
         raise HTTPException(
             status_code=502,
             detail="Could not reach the agent's LLM provider.",
         ) from exc
-    except anthropic.APIStatusError as exc:
+    except openai.APIStatusError as exc:
         logger.exception(
             "Agent LLM provider returned status %s: %s", exc.status_code, exc
         )
         raise HTTPException(
             status_code=502,
             detail=f"Agent LLM provider error: {exc.status_code}.",
+        ) from exc
+    except genai_errors.APIError as exc:
+        logger.exception(
+            "Agent LLM provider returned status %s: %s",
+            getattr(exc, "code", None),
+            exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Agent LLM provider error: {getattr(exc, 'code', None)}.",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unhandled agent error: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="The agent could not process this request.",
         ) from exc
 
 
@@ -100,21 +108,6 @@ def chat(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_learner),
 ):
-    """
-    Single entry point for the agent chat. Routes to assignment guidance
-    ("guide, don't solve", grounded in the structured assignment brief)
-    when the caller supplies assignment_id, or general curriculum/FAQ chat
-    otherwise. Scoped to the requesting learner via `get_current_learner`
-    -- there is no way to ask on another learner's behalf.
-
-    The routing decision lives here, not in schema.py or service.py: the
-    request shape (MessageRequest) stays a plain data container, and
-    service.py keeps its two distinct entry points
-    (answer_chat_question/answer_assignment_guidance) because they still
-    genuinely differ inside (query_type, whether get_assignment_brief runs
-    at all) -- this function is the one place that decides which of those
-    two a given request means.
-    """
     if body.assignment_id is not None:
         result = _handle_agent_errors(
             answer_assignment_guidance,
@@ -146,27 +139,6 @@ def create_escalation(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_learner),
 ):
-    """
-    Direct learner-triggered escalation -- what the frontend's "Escalate to
-    trainer" button calls, after a chat turn came back with
-    AgentTurnResponse.escalation_available=True.
-
-    Was previously an untyped `dict` body returning a hand-built `dict` --
-    now a real typed contract (`EscalationCreate` in/`EscalationResponse`
-    out, both app/features/escalations/schema.py) shared with the
-    trainer-facing GET endpoints in app/features/escalations/router.py, so
-    a caller gets proper 422 validation instead of a KeyError-shaped 500,
-    and gets back the full row it just created (including whatever
-    module_id/assignment_id/draft_response/confidence_score it sent),
-    rather than a bespoke five-key summary.
-
-    `module_id`, `assignment_id`, `draft_response`, and `confidence_score`
-    are all optional and, when this is called right after a chat turn,
-    should be the same values the frontend already received on that turn's
-    request (module_id/assignment_id) and response
-    (draft_response/confidence_score) -- round-tripped, not re-typed by the
-    learner or re-derived here.
-    """
     reason_value = body.reason.strip()
     try:
         reason = EscalationReason(reason_value)
@@ -226,12 +198,6 @@ def get_history(
     offset: int = Query(default=0, ge=0),
     repository: ConversationHistoryRepository = Depends(get_history_repository),
 ):
-    """
-    Returns the current user's own conversation history with the agent,
-    newest first. Scoped to the requesting user via `get_current_learner` --
-    there is no way to pass another learner's id in, matching the RBAC
-    pattern used for retrieval in app/agent/repository.py.
-    """
     rows, total = repository.get_page(
         course_id=course_id,
         module_id=module_id,

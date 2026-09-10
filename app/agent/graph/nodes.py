@@ -1,30 +1,3 @@
-"""
-Graph node implementations for the KodeBuddy AI agent pipeline.
-
-Nodes, executed by the compiled graph (see build.py):
-
-    retrieve -> reason -> confidence_gate -> route
-             -> no_context (skips reason/confidence_gate when there's
-                              nothing usable to reason over) -> route
-
-Owner: Dev C (Graph / Reasoning / Guardrails)
-
-Dependency contract:
-    - `retrieve` calls into Dev B's tools (app/agent/tools/*). Signatures are
-      pinned in graph/contracts.py so this module is fully unit-testable
-      against fakes before Dev B's tools land — see tests/test_graph.py.
-    - `route` no longer calls Dev B's `escalate_to_trainer` itself. It only
-      *reasons* about whether escalation is warranted and reflects that back
-      in `escalation_available`/`escalation_reason` — the actual write now
-      happens exclusively via the learner-triggered `POST /agent/escalate`
-      endpoint (app/agent/router.py), which the frontend calls when the
-      learner taps the "Escalate to trainer" button. See `route`'s own
-      docstring below for the full rationale.
-    - `reason` calls the LLM through an injected `LLMClient` (contracts.py),
-      never a hardcoded provider SDK call, so this stays testable and
-      provider-agnostic.
-"""
-
 from __future__ import annotations
 
 import json
@@ -36,6 +9,7 @@ from app.agent.graph.contracts import (
     EscalateToTrainerFn,
     GetAssignmentBriefFn,
     LLMClient,
+    SearchAssignmentsFn,
     SearchCurriculumFn,
     SearchFaqsFn,
 )
@@ -54,19 +28,16 @@ from app.agent.prompts.chat import CHAT_SYSTEM_PROMPT, build_user_turn
 
 try:
     from app.agent.types import AgentRetrievalError
-except ImportError:  
+except ImportError:
     class AgentRetrievalError(Exception):
         pass
 
 logger = logging.getLogger("kodebuddy.agent.graph")
 
-# --- Guardrail thresholds (tunable; Dev C owns these) ---
-# A chunk below this score isn't considered "relevant" at all.
 MIN_RETRIEVAL_SCORE = 0.55
 MIN_CONFIDENT_TOP_SCORE = 0.62
 POLICY_VIOLATION_LINE_THRESHOLD = 4
 
-# --- Static text for `route`'s not-confident fallback message ---
 _ESCALATE_CTA_WITH_DRAFT = (
     "If that doesn't cover it, you can escalate this question to your "
     "trainer and they'll follow up with you directly."
@@ -90,52 +61,20 @@ _INPUT_FIELDS = (
 
 @dataclass
 class AgentDependencies:
-    """
-    Everything the graph needs from outside itself, injected once at
-    graph-build time.
-
-    Keeping these as injected dependencies — rather than nodes.py importing
-    and calling Dev B's tools / an LLM SDK directly — is what lets this
-    module be unit tested with fakes today, and lets Dev D wire in the real
-    LLM client and Dev B's real tools later without touching node logic.
-    """
-
     llm: LLMClient
     search_curriculum: SearchCurriculumFn
     search_faqs: SearchFaqsFn
     get_assignment_brief: GetAssignmentBriefFn
     escalate_to_trainer: EscalateToTrainerFn
+    search_assignments: SearchAssignmentsFn
     max_history_turns: int = field(default=6)
 
 
 def _reset_transient_fields(state: AgentState) -> AgentState:
-    """
-    Strips any previously-computed fields before a fresh graph run.
-
-    Defensive against the case where a caller reuses or mutates the same
-    state dict across multiple turns instead of building a fresh one per
-    graph.invoke() call — without this, a prior turn's retrieved_chunks,
-    is_confident, escalation_reason, etc. would leak into the current turn
-    and could, for example, cause a confident answer to be returned as
-    still-escalated, or vice versa.
-    """
     return {k: v for k, v in state.items() if k in _INPUT_FIELDS}
 
 
 def _validate_ids(state: AgentState) -> None:
-    """
-    Fails loudly on a type mismatch instead of letting it degrade silently.
-
-    `learner_id`/`course_id`/`module_id`/`assignment_id`/`trainer_id` must
-    be `int` to match the backend's primary keys. Without this check, a
-    stray `str` id (e.g. an unconverted FastAPI path param) wouldn't raise
-    anywhere — it would just make the RBAC-scoped retrieval query match
-    zero rows, which looks identical to "no relevant content" and quietly
-    escalates to a trainer instead of surfacing the actual bug. `bool` is
-    explicitly rejected too, since `isinstance(True, int)` is `True` in
-    Python and would otherwise slip through this check.
-    """
-
     def is_valid_int(value) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
 
@@ -149,11 +88,10 @@ def _validate_ids(state: AgentState) -> None:
         if value is not None and not is_valid_int(value):
             raise TypeError(
                 f"{optional_field} must be int or None, got {value!r}"
-                )
+            )
 
 
 def make_retrieve_node(deps: AgentDependencies):
-    """Returns the `retrieve` node, closed over its dependencies."""
 
     def retrieve(state: AgentState) -> AgentState:
         state = _reset_transient_fields(state)
@@ -174,6 +112,9 @@ def make_retrieve_node(deps: AgentDependencies):
                 query=question, course_id=course_id, module_id=module_id
             )
             faq_hits = deps.search_faqs(query=question, course_id=course_id)
+            assignment_hits = deps.search_assignments(
+                query=question, course_id=course_id, module_id=module_id
+            )
 
         except AgentRetrievalError as exc:
             logger.error(
@@ -190,7 +131,7 @@ def make_retrieve_node(deps: AgentDependencies):
                 "retrieval_failed": True,
             }
 
-        chunks: list[RetrievedChunk] = [*curriculum_hits, *faq_hits]
+        chunks: list[RetrievedChunk] = [*curriculum_hits, *faq_hits, *assignment_hits]
         chunks.sort(key=chunk_score, reverse=True)
 
         logger.info(
@@ -212,18 +153,6 @@ def make_retrieve_node(deps: AgentDependencies):
 
 
 def make_retrieval_error_node():
-    """
-    Returns the `retrieval_error` node — reached directly from `retrieve`
-    (see build.py's conditional edge) when retrieval raised an
-    AgentRetrievalError, rather than legitimately finding nothing.
-
-    Skips `reason`/`confidence_gate` entirely, same as `no_context`, but
-    stays a separate node and a separate EscalationReason
-    (RETRIEVAL_UNAVAILABLE vs NO_RELEVANT_CONTEXT) — an outage and a
-    curriculum content gap look identical to a learner but need different
-    follow-up from the team, and conflating them in telemetry would hide
-    that.
-    """
 
     def retrieval_error(state: AgentState) -> AgentState:
         logger.warning(
@@ -251,17 +180,6 @@ def make_retrieval_error_node():
 
 
 def make_no_context_node():
-    """
-    Returns the `no_context` node — reached directly from `retrieve` (see
-    build.py's conditional edge) when there's nothing to reason over: no
-    retrieved chunks, and (for assignment guidance) no assignment brief
-    either.
-
-    Skips the LLM call entirely rather than asking the model to answer from
-    nothing. This both avoids a wasted API call on every guaranteed-empty
-    question, and avoids relying on the model to correctly refuse to answer
-    despite having zero grounding — which it can't be guaranteed to do.
-    """
 
     def no_context(state: AgentState) -> AgentState:
         logger.info(
@@ -292,23 +210,6 @@ _JSON_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
 
 def _extract_first_json_object(text: str) -> str | None:
-    """
-    Scans `text` for the first syntactically-balanced top-level `{...}`
-    object and returns that substring, or None if no balanced object is
-    found.
-
-    Exists because neither Gemini nor OpenRouter is guaranteed to emit
-    *only* the JSON object even when a provider-level structured-output
-    constraint is requested (see app/agent/llm.py) — a model can still
-    preface it with a stray "Here's my answer:" line, or a fallback tier
-    that had to retry without schema enforcement can wrap it in prose. The
-    old parser only handled the two cases where the whole trimmed string
-    was JSON, or was JSON inside a ``` fence; both fail on a single leading
-    or trailing word. This walks the string tracking brace depth and
-    string/escape state (so a `{`/`}` inside a quoted "answer" value isn't
-    mistaken for structural nesting) and returns the first complete
-    top-level object it finds.
-    """
     start = text.find("{")
     if start == -1:
         return None
@@ -335,46 +236,10 @@ def _extract_first_json_object(text: str) -> str | None:
             depth -= 1
             if depth == 0:
                 return text[start : i + 1]
-    return None  # unbalanced -- no complete object found
+    return None
 
 
 def _parse_llm_response(raw_text: str) -> tuple[str, bool, bool]:
-    """
-    Parses the model's structured JSON response:
-    {"answer": str, "uncertain": bool}.
-
-    Returns (answer, uncertain, parser_failed).
-
-    Structured JSON output replaces an earlier design that asked the model
-    to end its reply with a trailing `UNCERTAIN: true/false` text marker.
-    That worked with well-behaved models but smaller/fine-tuned ones
-    frequently dropped the marker, which — under the old fail-safe logic —
-    silently inflated the escalation rate for reasons indistinguishable
-    from genuine model uncertainty. JSON mode fails more predictably, and
-    failure is now its own tracked category (PARSER_FAILURE) rather than
-    being folded into MODEL_UNCERTAINTY.
-
-    app/agent/llm.py now asks each provider to *enforce* this shape at
-    generation time rather than relying solely on the prompt instruction,
-    which cuts how often this function's fail-safe path fires. It stays
-    here regardless, unchanged in spirit: a provider config isn't a
-    guarantee, a fallback tier can still land here without schema
-    enforcement, and this function must keep working against whatever text
-    actually comes back.
-
-    Tries three things, in order, before giving up:
-      1. The whole trimmed response as JSON (the common case when
-         provider-level structured output worked).
-      2. The contents of a ```/```json fence, if the response is wrapped in
-         one (a model ignoring the "no markdown fence" instruction).
-      3. The first balanced top-level {...} object found anywhere in the
-         response (a model that added stray prose before/after the JSON).
-
-    Fails safe: if none of those parse into the expected shape, the raw
-    text is used as the answer and both `uncertain` and `parser_failed` are
-    True — an unnecessary escalation costs a trainer a few seconds; a
-    false-confident wrong answer costs a learner's understanding.
-    """
     stripped = raw_text.strip()
 
     candidates = [stripped]
@@ -411,7 +276,7 @@ def _parse_llm_response(raw_text: str) -> tuple[str, bool, bool]:
 
     logger.warning(
         "reason: failed to parse structured LLM output; failing safe"
-        )
+    )
     return raw_text.strip(), True, True
 
 
@@ -419,17 +284,6 @@ _CODE_BLOCK_PATTERN = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
 
 
 def _violates_guide_dont_solve_policy(answer: str) -> bool:
-    """
-    Heuristic check for the "guide, don't solve" rule: flags a response that
-    contains a fenced code block long enough to plausibly be a full working
-    solution rather than a short illustrative snippet.
-
-    Deliberately a cheap regex heuristic, not an AST-level solution
-    detector — this is a guardrail net that catches the LLM ignoring the
-    system prompt, not a guarantee of policy compliance. A short snippet
-    under the line threshold still passes, matching the prompt's explicit
-    allowance for brief illustrative examples on unrelated inputs.
-    """
     for block in _CODE_BLOCK_PATTERN.findall(answer):
         non_empty_lines = [line for line in block.splitlines() if line.strip()]
         if len(non_empty_lines) > POLICY_VIOLATION_LINE_THRESHOLD:
@@ -438,7 +292,6 @@ def _violates_guide_dont_solve_policy(answer: str) -> bool:
 
 
 def make_reason_node(deps: AgentDependencies):
-    """Returns the `reason` node, closed over its dependencies."""
 
     def reason(state: AgentState) -> AgentState:
         chunk_texts = [chunk_text(c) for c in state.get(
@@ -491,11 +344,6 @@ def make_reason_node(deps: AgentDependencies):
 
 
 def make_confidence_gate_node():
-    """
-    Returns the `confidence_gate` node. No dependencies needed — it's a pure
-    function of state, which is exactly what makes it easy for Dev E to
-    write regression evals against.
-    """
 
     def confidence_gate(state: AgentState) -> AgentState:
         chunks = state.get("retrieved_chunks", [])
@@ -527,7 +375,7 @@ def make_confidence_gate_node():
                 detail = f"top retrieval score {top_score:.3f} below confidence gate"
 
         logger.info(
-            "confidence_gate: learner=%s top_score=%.3f "
+            "confidence_gate: learner=%s top_score=%.3f model_uncertain=%s "
             "parser_failed=%s policy_violation=%s is_confident=%s reason=%s",
             state["learner_id"],
             top_score,
@@ -550,62 +398,6 @@ def make_confidence_gate_node():
 
 
 def make_route_node(deps: AgentDependencies):
-    """
-    Returns the `route` node, closed over its dependencies.
-
-    IMPORTANT — `route` no longer writes an escalation itself.
-
-    Previously this node called `deps.escalate_to_trainer(...)` directly
-    whenever `is_confident` was False, committing an `escalations` row in
-    the same request that answered the learner's question — before the
-    learner had any say in the matter. The product now surfaces escalation
-    as a learner choice (a button in the chat UI) rather than something the
-    agent silently does on their behalf, so this node's job shrinks to pure
-    *reasoning*: decide whether escalation is warranted, explain that to the
-    learner, and hand back enough structured info (`escalation_reason`,
-    `escalation_detail`) for the frontend to render an "Escalate to trainer"
-    button and, if the learner taps it, call the already-existing
-    learner-triggered `POST /agent/escalate` endpoint
-    (app/agent/router.py::create_escalation), which performs the actual
-    write via `AgentRepository.create_escalation`.
-
-    `deps.escalate_to_trainer` is intentionally left in `AgentDependencies`
-    (unused here) rather than removed: it's still Dev B's supported way to
-    write an escalation row, other callers (the manual endpoint, and any
-    future auto-escalation path such as `EscalationReason.EXPLICIT_USER_REQUEST`)
-    use it or an equivalent, and removing it from the dependency contract
-    would be an unrelated, unnecessary break.
-
-    `escalated`/`escalation_id` are therefore never set to a truthy value by
-    this node anymore — they only ever get set once the learner actually
-    escalates, via the manual endpoint's own write path, which is separate
-    from graph state. This node instead sets a new field,
-    `escalation_available`, so the API/frontend can distinguish "the agent
-    thinks this should be escalated and is offering the option" from
-    "an escalation was actually recorded".
-
-    `draft_response` in the returned state is always safe to expose to the
-    learner: on the not-confident path this node overwrites it with `""`
-    whenever `safe_to_show` is False (i.e. `escalation_reason ==
-    POLICY_VIOLATION`), the same guardrail that already kept an unsafe
-    draft out of `final_response`. Callers (service.py, schema.py) can read
-    `draft_response` straight off the final state without re-checking
-    `escalation_reason` themselves.
-
-    The not-confident `final_response` text is no longer a reason-derived
-    "why we're not confident" sentence followed by the draft and CTA. It is
-    now just the draft itself (when safe to show) plus the deterministic
-    escalate CTA -- no commentary about *why* the agent isn't confident is
-    ever shown to the learner. `escalation_reason` is still returned in
-    state for the API/frontend to use (e.g. logging, analytics, or its own
-    UI copy), but `route` no longer surfaces any wording derived from it
-    inside `final_response`.
-
-    This also means `route` no longer makes an LLM call on the
-    not-confident path (that call previously only produced the now-removed
-    intro sentence), so this node is now a pure, synchronous function of
-    its input state.
-    """
 
     def route(state: AgentState) -> AgentState:
         if state.get("is_confident"):
