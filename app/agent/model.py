@@ -4,10 +4,10 @@ from sqlmodel import SQLModel, Field, Column, JSON
 from pgvector.sqlalchemy import Vector
 from app.agent.graph.state import ChatRole, EscalationReason
 from sqlalchemy import Enum as SAEnum
-from app.features.auth.model import User  
-from app.features.courses.model import Course 
-from app.features.modules.model import Module  
-from app.features.assignments.model import Assignment 
+from app.features.auth.model import User
+from app.features.courses.model import Course
+from app.features.modules.model import Module
+from app.features.assignments.model import Assignment
 
 
 class ContentEmbedding(SQLModel, table=True):
@@ -26,15 +26,16 @@ class ContentEmbedding(SQLModel, table=True):
         index=True,
         nullable=True,
     )
-    content_type: str = Field(max_length=50, index=True) 
-    source_type: str = Field(max_length=50)  
-    source_id: int                           
-    chunk_index: int = Field(default=0)       
+    content_type: str = Field(max_length=50, index=True)
+    source_type: str = Field(max_length=50)
+    source_id: int
+    chunk_index: int = Field(default=0)
     content_hash: Optional[str] = Field(default=None, max_length=64)
-    embedding_model: Optional[str] = Field(default=None, max_length=100) 
+    embedding_model: Optional[str] = Field(default=None, max_length=100)
     text: str = Field(nullable=False)
     embedding: List[float] = Field(sa_column=Column(Vector(1024), nullable=False))
-    
+
+
 class Escalation(SQLModel, table=True):
     __tablename__ = "escalations"
 
@@ -107,6 +108,7 @@ class ConversationHistory(SQLModel, table=True):
         )
     )
     message: str = Field(nullable=False)
+    retrieved_assignment_content: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         index=True,
@@ -114,18 +116,6 @@ class ConversationHistory(SQLModel, table=True):
 
 
 class QueryLog(SQLModel, table=True):
-    """
-    One record per graph run, capturing the confidence/escalation metrics
-    needed for observability and analytics.
-
-    Superset of the design doc's originally-specified columns (question,
-    retrieved_chunk_ids, confidence_score, escalated, latency_ms) and Dev
-    E's richer observability columns (query_type, is_confident,
-    escalation_reason/detail/id, top_retrieval_score) reconciled into one
-    table — see the model-schema discussion that replaced the duplicate
-    app/features/agent/model.py definition of this same table name.
-    """
-
     __tablename__ = "query_logs"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -143,7 +133,7 @@ class QueryLog(SQLModel, table=True):
         index=True,
         nullable=True,
     )
-    query_type: str = Field(max_length=50, index=True)  
+    query_type: str = Field(max_length=50, index=True)
     question: str = Field(nullable=False)
     retrieved_chunk_ids: List[str] = Field(
         sa_column=Column(JSON, nullable=False)
