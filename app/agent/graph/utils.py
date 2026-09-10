@@ -49,3 +49,6 @@ def chat_turn_role(turn: Any) -> str:
 
 def chat_turn_message(turn: Any) -> str:
     return str(get_field(turn, "message", "content", default=""))
+
+def chat_turn_retrieved_assignment_content(turn: Any) -> bool:
+    return bool(get_field(turn, "retrieved_assignment_content", default=False))
